@@ -25,12 +25,20 @@ ROUTES = {
 
 def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forward",
                  alerts_file: str | Path = "state/watchdog-history.json",
-                 protocol_file: str | Path = "protocols/2026-10-20-btc-eth-90d.json"):
+                 protocol_file: str | Path = "protocols/2026-10-20-btc-eth-90d.json",
+                 agent_db: str | Path = "state/agent_lab_shadow.db",
+                 qlib_db: str | Path = "state/qlib_lab_shadow.db",
+                 agent_plan: str | Path = "protocols/2026-10-20-exaone-agent-lab.json",
+                 qlib_plan: str | Path = "protocols/2026-10-20-qlib-lab.json"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
     daily_dir = Path(reports_dir).resolve()
     alert_store = Path(alerts_file).resolve()
     protocol_source = Path(protocol_file).resolve()
+    agent_source = Path(agent_db).resolve()
+    qlib_source = Path(qlib_db).resolve()
+    agent_plan_source = Path(agent_plan).resolve()
+    qlib_plan_source = Path(qlib_plan).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -74,6 +82,17 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                             "application/json; charset=utf-8")
                 return
             path = urlsplit(self.path).path
+            if path == "/api/research-lanes":
+                try:
+                    from .lane_comparison import compare_three_lanes
+                    self._reply(200, compare_three_lanes(
+                        database,agent_source,qlib_source,protocol_source,
+                        agent_plan_source,qlib_plan_source,
+                    ), "application/json; charset=utf-8")
+                except (OSError,ValueError,KeyError,RuntimeError,ImportError):
+                    self._reply(503, {"status":"unavailable"},
+                                "application/json; charset=utf-8")
+                return
             if path == "/api/protocol-collection":
                 if not protocol_source.is_file():
                     self._reply(404, {"status":"not_registered"},

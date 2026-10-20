@@ -28,6 +28,11 @@ def candles(day):
 
 @pytest.fixture
 def rig(tmp_path,monkeypatch):
+    class FixedBooster:
+        def predict(self, values):
+            import numpy as np
+            return np.full(len(values),.65,dtype=float)
+
     def fixed_model(path):
         symbol=str(path).split("/")[-1]
         if symbol not in ("KRW-BTC","KRW-ETH"):
@@ -40,7 +45,7 @@ def rig(tmp_path,monkeypatch):
             "asset":a,
             "sha256":"a"*64 if symbol=="KRW-BTC" else "b"*64,
             "model_sha256":"c"*64 if symbol=="KRW-BTC" else "d"*64,
-        },object()
+        },FixedBooster()
     def inference(bundle,frame,*,now):
         body,_=fixed_model(bundle)
         return {
@@ -48,6 +53,11 @@ def rig(tmp_path,monkeypatch):
             "bundle_manifest_sha256":body["sha256"],
             "model_sha256":body["model_sha256"],
             "probability":.65,"target":1,"threshold":.55,"real_orders_enabled":False,
+            "feature_values":[float(i) for i in range(9)],
+            "feature_sha256":__import__("hashlib").sha256(
+                __import__("json").dumps([float(i) for i in range(9)],
+                  separators=(",",":")).encode()
+            ).hexdigest(),
         }
     monkeypatch.setattr("quantlab.qlib_lab.read_qlib_bundle",fixed_model)
     monkeypatch.setattr("quantlab.qlib_lab.predict_completed",inference)
@@ -93,6 +103,11 @@ def test_qlib_lab_register_and_manual_cycle_never_mutate_production(rig):
                     quote_fn=lambda p,s,*,now:(price,now.date().isoformat()),
                     production_db=source)
     assert forward["status"]=="OK",forward["errors"]
+    from quantlab.qlib_decision_audit import audit_decisions
+    audited=audit_decisions(db,obj,model_loader=__import__("quantlab.qlib_lab",fromlist=["read_qlib_bundle"]).read_qlib_bundle)
+    assert audited["status"]=="PASS",audited["issues"]
+    assert audited["fully_replayed_decisions"]==2
+
     assert sum(row["status"]=="RECORDED" for row in forward["results"])==2
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT COUNT(*) FROM shadow_events").fetchone()[0]==2
@@ -146,3 +161,60 @@ def test_no_retroactive_registration_or_silent_reinitialize(rig):
     register_lab(plan,db,now=T20,fetch_fn=lambda _:candles("2026-10-19"))
     with pytest.raises(QlibLabError,match="Never overwrite"):
         register_lab(plan,db,now=T20)
+
+
+def test_qlib_decision_replay_rejects_changed_probability_and_target(rig):
+    from quantlab.qlib_decision_audit import audit_decisions
+    from quantlab import qlib_lab
+    root,plan,body=rig
+    db=root/"qlib_lab_shadow.db"
+    register_lab(plan,db,now=T20,fetch_fn=lambda _:candles("2026-10-19"))
+    price=float(candles("2026-10-20")["close"].iloc[-1])
+    r=run_manual(plan,db,now=T21,fetch_fn=lambda _:candles("2026-10-20"),
+        quote_fn=lambda p,s,*,now:(price,now.date().isoformat()))
+    assert r["status"]=="OK"
+    verify=lambda: audit_decisions(db,body,model_loader=qlib_lab.read_qlib_bundle)
+    assert verify()["status"]=="PASS"
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE qlib_model_decisions SET predicted_probability=.11 WHERE symbol='KRW-BTC'")
+    a=verify()
+    assert a["status"]=="FAIL"
+    assert "REPLAYED_MODEL_PROBABILITY_MISMATCH" in {x["code"] for x in a["issues"]}
+    with pytest.raises(QlibLabError,match="evidence mismatch"):
+        run_manual(plan,db,now=T21+timedelta(days=1),
+                   fetch_fn=lambda _:pytest.fail("Never fetch if tampered"))
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE qlib_model_decisions SET predicted_probability=.65 WHERE symbol='KRW-BTC'")
+        c.execute("UPDATE shadow_events SET target=0 WHERE track_id=("
+                  "SELECT track_id FROM shadow_accounts WHERE symbol='KRW-BTC')")
+    assert "MODEL_SIGNAL_TO_VIRTUAL_EVENT_MISMATCH" in {
+        x["code"] for x in verify()["issues"]
+    }
+
+
+def test_failed_decision_evidence_insert_rolls_back_event_quote_and_balance(rig):
+    root,plan,body=rig
+    db=root/"qlib_lab_shadow.db"
+    register_lab(plan,db,now=T20,fetch_fn=lambda _:candles("2026-10-19"))
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TRIGGER reject_test BEFORE INSERT ON qlib_inference_inputs "
+                  "WHEN NEW.symbol='KRW-BTC' BEGIN SELECT RAISE(ABORT,'inject'); END")
+    price=float(candles("2026-10-20")["close"].iloc[-1])
+    output=run_manual(plan,db,now=T21,fetch_fn=lambda _:candles("2026-10-20"),
+        quote_fn=lambda p,s,*,now:(price,now.date().isoformat()))
+    assert output["status"]=="ERROR"
+    assert len(output["errors"])==1 and output["errors"][0]["symbol"]=="KRW-BTC"
+    with sqlite3.connect(db) as c:
+        btc=c.execute("SELECT track_id,cash,last_equity FROM shadow_accounts "
+                      "WHERE symbol='KRW-BTC'").fetchone()
+        assert btc[1]==btc[2]==1000000
+        for table in ("shadow_events","shadow_quote_evidence",
+                      "qlib_model_decisions","qlib_inference_inputs"):
+            assert c.execute("SELECT COUNT(*) FROM "+table+
+                             " WHERE "+("track_id" if table=="shadow_events" else "symbol")+
+                             "=?", (btc[0] if table=="shadow_events" else "KRW-BTC",)).fetchone()[0]==0
+        c.execute("DROP TRIGGER reject_test")
+    again=run_manual(plan,db,now=T21,fetch_fn=lambda _:candles("2026-10-20"),
+        quote_fn=lambda p,s,*,now:(price,now.date().isoformat()))
+    assert again["status"]=="OK",again["errors"]
+    assert sum(x.get("status")=="RECORDED" for x in again["results"])==1

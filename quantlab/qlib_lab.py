@@ -45,6 +45,13 @@ def _ensure_model_evidence(db: str | Path):
               PRIMARY KEY (symbol, decision_date)
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS qlib_inference_inputs (
+              symbol TEXT NOT NULL, decision_date TEXT NOT NULL,
+              feature_json TEXT NOT NULL, feature_sha256 TEXT NOT NULL,
+              PRIMARY KEY (symbol, decision_date)
+            )
+        """)
 
 
 def _isolate(db: str | Path, production: str | Path, agent_db: str | Path):
@@ -207,6 +214,10 @@ def run_manual(
     audit=audit_shadow_ledger(db)
     if audit["status"]!="PASS":
         raise QlibLabError("Frozen virtual account ledger audit failed")
+    from .qlib_decision_audit import audit_decisions
+    evidence=audit_decisions(db,obj,model_loader=read_qlib_bundle)
+    if evidence["status"]=="FAIL":
+        raise QlibLabError("Recorded model probability or event evidence mismatch")
     results=[]
     errors=[]
     # Lock independently; no other timer or paper manager can use this db.
@@ -235,17 +246,37 @@ def run_manual(
                 if session!=current.date().isoformat():
                     raise QlibLabError("Quote not from current UTC session")
                 validate_public_quote(quality["last_completed_close"],price)
+                feature_values=pred.get("feature_values")
+                feature_digest=pred.get("feature_sha256")
+                if (not isinstance(feature_values,list)
+                    or len(feature_values)!=9
+                    or any(not isinstance(x,(int,float)) or not math.isfinite(x)
+                           for x in feature_values)
+                    or sha256(_canonical(feature_values)).hexdigest()!=feature_digest
+                    or not math.isfinite(pred["probability"])
+                    or pred["threshold"]!=item["spec"]["threshold"]
+                    or pred["target"]!=int(pred["probability"]>=pred["threshold"])
+                    or pred["real_orders_enabled"] is not False):
+                    raise QlibLabError("Frozen model inference evidence inconsistent")
+                # One atomic transaction for account+event, predicted signal,
+                # exact input features and public ticker evidence. Any failure
+                # rolls back ALL four; an orphan quote cannot block next cycle.
                 with conn:
                     if conn.execute(
                         "SELECT 1 FROM qlib_model_decisions WHERE symbol=? AND decision_date=?",
-                        (sym,day),
-                    ).fetchone():
-                        raise QlibLabError("Frozen model decision already exists for this UTC day")
-                    if conn.execute(
+                        (sym,day)
+                    ).fetchone() or conn.execute(
                         "SELECT 1 FROM shadow_quote_evidence WHERE symbol=? AND decision_date=?",
                         (sym,day)
+                    ).fetchone() or conn.execute(
+                        "SELECT 1 FROM qlib_inference_inputs WHERE symbol=? AND decision_date=?",
+                        (sym,day)
                     ).fetchone():
-                        raise QlibLabError("Previously frozen quote evidence blocks overwrite")
+                        raise QlibLabError("Frozen decision/evidence already present: manual review required")
+                    event=_apply(conn,row,decision_date=day,session_date=session,
+                                 price=float(price),target=int(pred["target"]),now=current)
+                    if event["status"]!="RECORDED":
+                        raise QlibLabError("Expected a recorded forward-only virtual event")
                     conn.execute(
                         "INSERT INTO qlib_model_decisions "
                         "(symbol,decision_date,model_sha256,bundle_sha256,"
@@ -256,15 +287,17 @@ def run_manual(
                          float(pred["threshold"]),int(pred["target"]),current.isoformat()),
                     )
                     conn.execute(
+                        "INSERT INTO qlib_inference_inputs "
+                        "(symbol,decision_date,feature_json,feature_sha256) VALUES(?,?,?,?)",
+                        (sym,day,_canonical(feature_values).decode(),feature_digest),
+                    )
+                    conn.execute(
                         "INSERT INTO shadow_quote_evidence "
                         "(symbol,decision_date,session_date,prior_completed_close,"
                         "public_ticker_price,observed_at_utc,source) VALUES(?,?,?,?,?,?,?)",
                         (sym,day,session,float(quality["last_completed_close"]),
                          float(price),current.isoformat(),"upbit_public_ticker"),
                     )
-                with conn:
-                    event=_apply(conn,row,decision_date=day,session_date=session,
-                                 price=float(price),target=int(pred["target"]),now=current)
                 results.append({
                     **event,"qlib_probability":pred["probability"],
                     "bundle_sha256":pred["bundle_manifest_sha256"],
@@ -310,7 +343,10 @@ def main(argv=None):
             obj=verify_plan(args.plan)
             _verify_accounts(args.db,obj)
             audit=audit_shadow_ledger(args.db)
-            result={"status":audit["status"],"accounts":audit["accounts"],
+            from .qlib_decision_audit import audit_decisions
+            evidence=audit_decisions(args.db,obj,model_loader=read_qlib_bundle)
+            result={"status":"FAIL" if evidence["status"]=="FAIL" else audit["status"],
+                    "decision_replay":evidence,"accounts":audit["accounts"],
                     "events":audit["events"],"manual_only":True,
                     "real_orders_enabled":False}
         print(json.dumps(result,ensure_ascii=False,indent=2))

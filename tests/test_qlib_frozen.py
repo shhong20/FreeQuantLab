@@ -112,3 +112,38 @@ def test_git_versioned_real_market_model_bundles_reload_with_exact_dependencies(
         assert manifest["training_last_completed_utc_day"]=="2026-10-19"
         assert booster.num_trees()>=1
         assert manifest["real_orders_enabled"] is False
+
+
+def test_real_committed_model_two_asset_next_day_virtual_decision_replays(tmp_path):
+    """Actual immutable BTC+ETH Qlib boosters; completely synthetic future bar.
+
+    This tests software reproducibility and simulated ledger consistency,
+    NEVER observed trading returns, live fills or AI investment success.
+    """
+    from pathlib import Path
+    from quantlab.qlib_lab import create_plan,register_lab,run_manual,verify_plan
+    from quantlab.qlib_decision_audit import audit_decisions
+    root=Path(__file__).resolve().parents[1]
+    source=[root/"models"/"qlib"/sym for sym in ("KRW-BTC","KRW-ETH")]
+    stamp=datetime(2026,10,20,8,30,tzinfo=timezone.utc)
+    nxt=stamp+timedelta(days=1)
+    manifest=tmp_path/"lab.json"
+    db=tmp_path/"qlib_lab_shadow.db"
+    obj=create_plan(manifest,source,now=stamp)
+    assert obj["automatic_timer"] is False
+    register_lab(manifest,db,now=stamp,fetch_fn=lambda _:candles())
+    upcoming=candles("2026-10-20")
+    quote=float(upcoming["close"].iloc[-1])
+    out=run_manual(manifest,db,now=nxt,fetch_fn=lambda _:upcoming,
+                  quote_fn=lambda p,s,*,now:(quote,now.date().isoformat()),
+                  production_db=tmp_path/"shadow.db",
+                  agent_db=tmp_path/"agent_lab_shadow.db")
+    assert out["status"]=="OK",out["errors"]
+    assert all(item["status"]=="RECORDED" for item in out["results"])
+    frozen=verify_plan(manifest)
+    validated=audit_decisions(db,frozen)
+    assert validated["status"]=="PASS",validated["issues"]
+    assert validated["qlib_model_events"]==2
+    assert validated["fully_replayed_decisions"]==2
+    assert not validated["actual_trade_execution_verified"]
+    assert not validated["broker_orders_enabled"]

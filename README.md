@@ -256,3 +256,21 @@ Versioned recovery copies live under `models/qlib/KRW-BTC/` and `models/qlib/KRW
 The independent Qlib virtual ledger starts with exactly 2 newly registered accounts. The 6-account 90-day experiment and 2-account Exaone factor lab remain untouched. **No evidence of investable alpha** and no automatic strategy promotion; even the actual LightGBM model is merely a newly registered research candidate.
 
 [Full checkpoint, SHA256, reproducibility, isolated paper and recovery guide](docs/QLIB_FROZEN_CHECKPOINT_LAB.md).
+
+
+## Qlib model decision replay and same-date three-lane monitoring (2026-10-20)
+
+The isolated *manual-only* Qlib model lane now atomically records each future simulated trade, public Upbit ticker, **exact 9-feature input hash**, and **original frozen model probability/threshold/target**. A separate read-only forensic audit reloads the unchanged Qlib BTC/ETH boosters and recomputes each recorded probability; any mismatch with the saved action blocks further manual Qlib observations.
+
+```bash
+.venv/bin/python -m quantlab.qlib_lab status \
+  --plan protocols/2026-10-20-qlib-lab.json --db state/qlib_lab_shadow.db
+```
+
+The new local-only `GET /api/research-lanes` (also available in the dashboard) compares *coverage* of the existing original 90-day six accounts, two manual Exaone factors, and two manual Qlib models. It requires identical UTC decision dates, matching frozen account/risk/cost assumptions, verified model evidence, and comparable observed public ticker quotes. **No cross-lane 90-day return values are shown before the registered 2027-01-19 UTC cutoff**; incomplete data always withholds performance comparisons. A resulting score, if ever available, is hypothetical and nonconfirmatory, with no automatic broker orders or promotion.
+
+```bash
+.venv/bin/python -m quantlab.lane_comparison
+```
+
+[Read-only replay, atomic rollback, common-day criteria and safety](docs/QLIB_DECISION_REPLAY_AND_CROSSLANE.md).

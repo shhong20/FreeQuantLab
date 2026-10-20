@@ -241,6 +241,9 @@ def predict_completed(
         "decision_utc_date":info["completed_utc_day"],
         "probability":prediction,
         "target":int(prediction>=body["threshold"]),
+        "feature_values":row.astype(float).tolist(),
+        "feature_sha256":_digest(_canonical(row.astype(float).tolist())),
+
         "threshold":body["threshold"],"model_sha256":body["model_sha256"],
         "bundle_manifest_sha256":body["sha256"],
         "training_last_completed_utc_day":body["training_last_completed_utc_day"],
