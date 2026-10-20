@@ -188,3 +188,20 @@ Every watchdog cycle separately **replays cash/units/fees and account state** fr
 Daily reports also show **manual research review readiness**: at least 90 genuine forward observations, no missed observations, at least 8 virtual orders, no virtual risk halt, MDD better than -12%, identical benchmark dates and positive descriptive return advantage. These are *minimum sample checks, not proof of alpha*, and **never authorize strategy auto-promotion or live orders**. Qlib research inputs now have their own date/OHLCV validation (weekend gaps allowed for stocks).
 
 [Detailed validation and safety criteria](docs/DATA_LEDGER_QUALITY.md).
+
+
+## Historical multiple-testing sensitivity and preregistered future observation (2026-10-20)
+
+`agent-compare` and `qlib-compare` now run **joint moving-block max-T sensitivity** alongside individual bootstrap: same 10-day time blocks are resampled across the complete *reported* A/B/C or Qlib candidate family, so correlated model results cannot be counted as independent wins. Existing past OOS was repeatedly inspected; these are **NOT confirmatory p-values** and do not establish investment alpha.
+
+The current six frozen BTC/ETH paper strategies are now listed in a SHA-256 fingerprinted, Git-versioned **90-day future protocol**:
+`protocols/2026-10-20-btc-eth-90d.json`. Predeclared decision days are `2026-10-21..2027-01-18 UTC`; inspect results only after `2027-01-19T00:00Z`.
+
+```bash
+.venv/bin/python -m quantlab --db state/shadow.db protocol-inspect \
+  --protocol protocols/2026-10-20-btc-eth-90d.json
+```
+
+The protocol cannot be overwritten by the CLI and will not reveal window return scores before the deadline. **The normal dashboard still shows interim performance, so it is a preregistration, NOT a genuinely blinded holdout.** Complete records still require manual interpretation and cannot trigger real orders or strategy auto-promotion.
+
+[Full methodology, pitfalls and limitations](docs/PROSPECTIVE_MULTIPLE_TESTING.md).

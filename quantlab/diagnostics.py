@@ -197,6 +197,101 @@ def paired_block_bootstrap(
     }
 
 
+def exploratory_familywise_max_t(
+    daily_groups_by_fold: Sequence[dict[str, np.ndarray]],
+    *, benchmark: str = "buy_hold_same_exposure",
+    candidates: Sequence[str] | None = None,
+    block_size: int = 10, repetitions: int = 1000, seed: int = 73,
+) -> dict:
+    """Paired, joint-block, centered-null max-T historical sensitivity.
+
+    Reuses the exact SAME sampled time indices across strategies per fold,
+    retaining their cross-strategy correlation. Centering imposes a zero
+    average log excess null. It does NOT account for strategies tested in
+    previous research, or repeated viewing of these OOS folds: exploratory.
+    """
+    if not daily_groups_by_fold:
+        raise ValueError("Nonempty chronological test folds required")
+    if not 2 <= block_size <= 60 or not 100 <= repetitions <= 10000:
+        raise ValueError("Invalid multiple-testing bootstrap settings")
+    labels = list(candidates) if candidates is not None else [
+        k for k in daily_groups_by_fold[0] if k != benchmark
+        and not k.startswith("buy_hold_")
+    ]
+    if not labels or len(set(labels)) != len(labels) or benchmark in labels:
+        raise ValueError("Explicit nonempty unique candidate family required")
+    aligned = []
+    for fold in daily_groups_by_fold:
+        if benchmark not in fold or any(k not in fold for k in labels):
+            raise ValueError("Missing candidate or benchmark in test fold")
+        b = np.asarray(fold[benchmark], dtype=float)
+        if b.ndim != 1 or len(b) < max(10, block_size):
+            raise ValueError("Too few paired test observations")
+        if not np.isfinite(b).all() or np.any(b <= -1):
+            raise ValueError("Invalid benchmark returns")
+        ds = []
+        for name in labels:
+            s = np.asarray(fold[name], dtype=float)
+            if s.shape != b.shape or not np.isfinite(s).all() or np.any(s <= -1):
+                raise ValueError("Candidate not aligned with benchmark")
+            ds.append(np.log1p(s) - np.log1p(b))
+        aligned.append(np.stack(ds, axis=1))
+    observed = np.concatenate(aligned, axis=0)
+    n = len(observed)
+    means = observed.mean(axis=0)
+    sds = observed.std(axis=0, ddof=1)
+    estimable = sds > 1e-12
+    tvalues = np.zeros(len(labels), dtype=float)
+    tvalues[estimable] = means[estimable] * np.sqrt(n) / sds[estimable]
+    centered = [arr - means[None, :] for arr in aligned]
+    rng = np.random.default_rng(seed)
+    null_t = np.zeros((repetitions, len(labels)), dtype=float)
+    for i in range(repetitions):
+        chunks = []
+        for fold in centered:
+            m = len(fold)
+            starts = rng.integers(0, m, size=(m + block_size - 1) // block_size)
+            indices = (starts[:, None] + np.arange(block_size)) % m
+            chunks.append(fold[indices.ravel()[:m]])
+        sample = np.concatenate(chunks, axis=0)
+        null_t[i, estimable] = sample[:, estimable].mean(axis=0) * np.sqrt(n) / sds[estimable]
+    null_max = null_t.max(axis=1)
+    tests = {}
+    for j, label in enumerate(labels):
+        # Nonpositive or variance-degenerate estimated effects cannot pass.
+        p_raw = float((1 + np.count_nonzero(null_t[:, j] >= tvalues[j])) / (repetitions + 1))
+        p_max = float((1 + np.count_nonzero(null_max >= tvalues[j])) / (repetitions + 1))
+        tests[label] = {
+            "observed_log_excess": float(observed[:, j].sum()),
+            "observed_studentized_statistic": float(tvalues[j]) if estimable[j] else None,
+            "uncorrected_bootstrap_tail": p_raw if estimable[j] and tvalues[j] > 0 else 1.,
+            "familywise_max_t_tail": max(p_raw, p_max) if estimable[j] and tvalues[j] > 0 else 1.,
+            "estimable": bool(estimable[j]),
+        }
+    return {
+        "method": "fold_stratified_joint_circular_block_centered_null_max_t",
+        "candidate_family": labels,
+        "candidate_count": len(labels),
+        "benchmark": benchmark,
+        "total_oos_days": n,
+        "block_size": block_size,
+        "resamples": repetitions,
+        "seed": seed,
+        "tests": tests,
+        "historical_sensitivity_only": True,
+        "confirmatory_p_values": False,
+        "adjusts_for_previously_screened_candidates": False,
+        "past_oos_already_inspected": True,
+        "eligible_for_automatic_promotion": False,
+        "warning": (
+            "Max-T adjusts only for the evaluated candidate family, conditional on "
+            "a stationary centered-null approximation. Prior tests, selection, "
+            "dependent folds and repeated OOS inspection make reported bootstrap "
+            "tails invalid as confirmatory p-values; do not infer investment alpha."
+        ),
+    }
+
+
 def diagnostic_summary(
     daily_groups_by_fold: Sequence[dict[str, np.ndarray]],
     *, benchmark: str = "buy_hold_same_exposure",
@@ -219,6 +314,9 @@ def diagnostic_summary(
     return {
         "benchmark": benchmark,
         "comparisons": paired,
+        "familywise_historical_sensitivity": exploratory_familywise_max_t(
+            daily_groups_by_fold, benchmark=benchmark
+        ),
         "validation_warning": (
             "Exploratory OOS diagnostics only; inspecting/comparing these "
             "results makes this period unsuitable for another model-selection "
