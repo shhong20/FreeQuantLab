@@ -107,7 +107,13 @@ class LocalLLMAgent:
     def propose(self, train_summary: dict) -> list[FactorProposal]:
         response = self._ask("alpha_proposer", {"training_only": train_summary,
             "rules": "Return {\"factors\":[{\"name\":\"...\",\"feature\":\"r5\",\"direction\":\"gt\",\"threshold\":0.0}]}. At most 5 distinct factors. Allowed feature names: " + ", ".join(FEATURE_COLUMNS) + ". direction gt or lt. threshold number within [-0.25, 0.25]. No executable expressions."})
-        factors = response.get("factors")
+        # Exaone may put the same explicitly structured proposal one level down.
+        # Never accept an arbitrary wrapper chain or model-authored expressions.
+        if set(response) == {"proposal"} and isinstance(response["proposal"], dict):
+            response = response["proposal"]
+        if set(response) != {"factors"}:
+            raise AgentError("Unexpected alpha proposal schema")
+        factors = response["factors"]
         if not isinstance(factors, list) or not 1 <= len(factors) <= 5:
             raise AgentError("Must return 1-5 proposed factors")
         parsed = [FactorProposal.parse(v) for v in factors]
@@ -118,6 +124,14 @@ class LocalLLMAgent:
     def review(self, summary: dict) -> float:
         response = self._ask("risk_reviewer", {"validation_only": summary,
             "rules": "Return {\"exposure_scale\":0 or 0.5 or 1,\"reason\":\"short text\"}. No test data is provided. 0 means HOLD/cash."})
+        # Exaone may return a single validation_results wrapper. Read only
+        # the explicitly allowlisted risk_assessment values; ignore any
+        # narrative or recommendation fields, which are not executable.
+        if set(response) == {"validation_results"}:
+            report = response["validation_results"]
+            if not isinstance(report, dict) or not isinstance(report.get("risk_assessment"), dict):
+                raise AgentError("Unexpected risk review schema")
+            response = report["risk_assessment"]
         if set(response) != {"exposure_scale", "reason"} or type(response["exposure_scale"]) not in (int, float) or response["exposure_scale"] not in (0, 0.5, 1) or not isinstance(response["reason"], str) or len(response["reason"]) > 300:
             raise AgentError("Invalid critic schema")
         return float(response["exposure_scale"])
