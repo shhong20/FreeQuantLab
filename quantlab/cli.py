@@ -186,6 +186,26 @@ def cmd_paper(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shadow(args: argparse.Namespace) -> int:
+    """Isolated research shadow accounts, not the legacy paper.db schema."""
+    from .shadow import bootstrap, run_cycle, status
+
+    if args.db == "paper.db":
+        raise ValueError("Shadow ledger requires explicit --db state/shadow.db")
+    if args.command == "shadow-status":
+        result = status(args.db)
+    else:
+        settings, assets = load_config(args.config)
+        if args.command == "shadow-bootstrap":
+            result = bootstrap(args.db, assets, settings)
+        elif args.command == "shadow-cycle":
+            result = run_cycle(args.db, assets)
+        else:
+            raise ValueError("Unsupported shadow command")
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 2 if result.get("status") == "ERROR" else 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     settings, assets = load_config(args.config)
     items = assets if not args.symbol else [_asset(assets, args.symbol)]
@@ -208,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-dir", default="reports")
     parser.add_argument("--db", default="paper.db")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("research", "freeze", "paper", "status", "agent-compare", "qlib-compare"):
+    for name in ("research", "freeze", "paper", "status", "agent-compare", "qlib-compare", "shadow-bootstrap", "shadow-cycle", "shadow-status"):
         p = sub.add_parser(name)
         p.add_argument("--symbol", required=name in ("freeze", "paper", "qlib-compare"))
         if name == "agent-compare":
@@ -220,7 +240,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return {"research": cmd_research, "freeze": cmd_freeze,
                 "paper": cmd_paper, "status": cmd_status,
-                "agent-compare": cmd_agent_compare, "qlib-compare": cmd_qlib_compare}[args.command](args)
+                "agent-compare": cmd_agent_compare, "qlib-compare": cmd_qlib_compare,
+                "shadow-bootstrap": cmd_shadow, "shadow-cycle": cmd_shadow,
+                "shadow-status": cmd_shadow}[args.command](args)
     except (DataError, ValueError, KeyError, OSError, RuntimeError, ImportError) as exc:
         print(f"FAIL CLOSED: {exc}", file=sys.stderr)
         return 2
