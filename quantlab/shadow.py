@@ -23,6 +23,7 @@ import pandas as pd
 from .data import fetch, live_paper_quote
 from .features import build_features, FEATURE_COLUMNS
 from .settings import Settings
+from .quality import validate_shadow_market, validate_public_quote
 
 
 TRACK_SPECS = (
@@ -158,6 +159,7 @@ def bootstrap(
             raise ValueError("Shadow onboarding supports only Upbit KRW spot, not stocks/demo")
         frame = fetch_fn(asset)
         last = _completed_utc_day(frame, current)
+        validate_shadow_market(frame, current)
         for entry in strategies:
             spec = _spec(entry)
             if spec["kind"] == "momentum" and len(frame) < spec["slow"]:
@@ -315,6 +317,7 @@ def run_cycle(
                     raise ValueError("Only frozen Upbit KRW instruments allowed")
                 data = fetch_fn(asset)
                 day = _completed_utc_day(data, current)
+                quality = validate_shadow_market(data, current)
                 ready = [r for r in tracks if not r["halted"] and
                          day > r["frozen_bar"] and
                          not con.execute(
@@ -328,6 +331,7 @@ def run_cycle(
                 price, session = quote_fn(key[0], key[1], now=current)
                 if session != current.date().isoformat():
                     raise ValueError("Quote does not belong to current UTC session")
+                validate_public_quote(quality["last_completed_close"], price)
                 for row in ready:
                     try:
                         target = _target(data, json.loads(row["spec_json"]))

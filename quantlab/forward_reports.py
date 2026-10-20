@@ -63,6 +63,7 @@ def report(db: str | Path, *, now: datetime | None = None) -> dict:
             expected_first = date.fromisoformat(track["frozen_bar"])
             assert date.fromisoformat(history[0]["decision_date"]) > expected_first
         entries.append({
+            "track_id": track["id"],
             "symbol": track["symbol"],
             "strategy": track["strategy"],
             "state": track["state"],
@@ -80,6 +81,10 @@ def report(db: str | Path, *, now: datetime | None = None) -> dict:
             "simulated_cumulative_cost": round(costs, 6),
             "halted": track["halted"],
         })
+    observed_dates_by_track = {
+        track_id: tuple(e["decision_date"] for e in stream)
+        for track_id, stream in events.items()
+    }
     hold_by_symbol = {
         t["symbol"]: t for t in entries if t["strategy"] == "buy_hold_20pct"
     }
@@ -90,6 +95,8 @@ def report(db: str | Path, *, now: datetime | None = None) -> dict:
             and t["first_observed_date"] == reference["first_observed_date"]
             and t["last_observed_date"] == reference["last_observed_date"]
             and t["recorded_days"] == reference["recorded_days"]
+            and observed_dates_by_track.get(t["track_id"], ())
+                == observed_dates_by_track.get(reference["track_id"], ())
         )
         t["vs_buy_hold_return_pp"] = (
             round(100*(t["observed_total_return"] -

@@ -14,6 +14,7 @@ import pandas as pd
 
 from .features import FEATURE_COLUMNS, build_features, forward_label
 from .settings import Settings
+from .quality import audit_dataset_snapshot
 from .diagnostics import daily_net_returns, trailing_regimes, regime_attribution, diagnostic_summary
 from .engine import Candidate, signals, simulate
 from .agent_lab import walk_forward_windows, _baseline_pool, _best_on_validation, _test_signal
@@ -125,6 +126,7 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
     """Same forward test windows and max exposure as A/B/C. No test-based selection."""
     from dataclasses import replace
     df = df.reset_index(drop=True)
+    quality = audit_dataset_snapshot(df)
     folds = []
     oos_paths = []
     regime_tags = trailing_regimes(df)
@@ -190,6 +192,7 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
     return {
         "engine": "qlib.contrib.model.gbdt.LGBModel",
         "study": "causal single-asset next-open binary direction (not Qlib Alpha158)",
+        "data_quality": quality,
         "out_of_sample_only": True,
         "promotion_eligible": False,
         "real_orders_enabled": False,
