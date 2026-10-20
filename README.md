@@ -105,3 +105,22 @@ python -m quantlab --config config.public.json status --symbol KRW-BTC
 참고 연구: [Microsoft RD-Agent](https://github.com/microsoft/RD-Agent), [Qlib](https://github.com/microsoft/qlib), [TradingAgents](https://github.com/TauricResearch/TradingAgents).
 
 라이선스: MIT (시장 데이터는 각 공급처 약관에 따름).
+
+## Qlib 실제 학습과 국내주식 장기 검증 (2026-10-20)
+
+현재 `quantlab/qlib_bridge.py`는 실제 Microsoft Qlib의 `qlib.contrib.model.gbdt.LGBModel`을 **학습 및 예측**에 사용합니다. 단일 종목 OHLCV를 원인-시간순 인메모리 데이터셋으로 변환하므로, Qlib의 공식 Alpha158·Alpha360 **다종목 팩터 벤치마크를 재현한 것은 아닙니다**.
+
+```bash
+pip install -e '.[dev,ml,qlib]'
+python -m quantlab --config examples/market_research_long.json qlib-compare --symbol KRW-BTC
+python -m quantlab --config examples/market_research_long.json qlib-compare --symbol KRW-ETH
+python -m quantlab --config examples/market_research_long.json qlib-compare --symbol 005930
+```
+
+- 무료 한국주식 연구 데이터는 Naver 금융 차트의 **비공식 공개 조회 API**를 사용합니다. 증권사 정식 데이터 계약·기업행동 보정·운영 안정성은 검증되지 않았으며 연구용 전용입니다. 실거래 또는 호가 조회에 사용하지 않습니다.
+- 공식 KIS API와 Stooq/Yahoo 수집기는 별도입니다. WSL에서 Stooq와 Yahoo 미국주식 접속은 지속적인 차단/429가 있어 안정적인 데이터원으로 간주하지 않습니다.
+- Qlib 결과는 `reports/*__qlib_compare.json`, 재현용 원본 OHLCV는 `reports/snapshots/`에 저장합니다. SHA-256 해시가 보고서에 포함됩니다. **GitHub에는 시세 CSV·실험 DB를 커밋하지 않습니다.**
+- 네 개의 비중첩 최종 평가 구간과 2배 수수료 스트레스 테스트를 제공합니다. 모델을 비교해 최종 테스트 성과를 재사용했다면 새로운 미래 데이터에서 다시 평가해야 합니다.
+- Qlib 벤치마크는 실거래뿐 아니라 자동 선행 모의거래 **승인 연결도 비활성화**되어 있습니다.
+
+자세한 재현/한계: [Qlib 및 시장자료 검증 안내](docs/QLIB_AND_MARKET_RESEARCH.md).

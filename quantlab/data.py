@@ -101,6 +101,58 @@ def stooq_daily(symbol: str, bars: int = 800, *, now: datetime | None = None) ->
         raise DataError("Stooq returned invalid or inaccessible history; use CSV or KIS fallback") from exc
 
 
+def naver_daily(symbol: str, bars: int = 1000, *, now: datetime | None = None) -> pd.DataFrame:
+    """RESEARCH ONLY: unofficial public Naver equity daily history.
+
+    No uptime guarantee or verified corporate action adjustments.
+    Does not support orders, simulated fills, or portfolio promotion.
+    """
+    from xml.etree import ElementTree as ET
+
+    if not (isinstance(symbol, str) and len(symbol) == 6
+            and symbol.isascii() and symbol.isdecimal()):
+        raise DataError("Naver symbol must be exactly six ASCII digits")
+    if not 80 <= bars <= 3000:
+        raise DataError("bars must be 80..3000")
+    current = now or datetime.now(timezone.utc)
+    today = current.astimezone(KST).date()
+    res = _get(
+        "https://fchart.stock.naver.com/sise.nhn",
+        params={"symbol": symbol, "timeframe": "day",
+                "count": bars + 10, "requestType": 0},
+    )
+    raw = res.content
+    if not isinstance(raw, bytes) or len(raw) > 2_000_000:
+        raise DataError("Invalid/oversized Naver history response")
+    try:
+        # Python's expat may not support EUC-KR bytes directly. Convert to
+        # UTF-8 before XML parsing; never relax tag/field validation.
+        xml_text = raw.decode('euc-kr')
+        xml_text = xml_text.replace('encoding="EUC-KR"', 'encoding="UTF-8"')
+        root = ET.fromstring(xml_text.encode('utf-8'))
+    except (ET.ParseError, UnicodeError, ValueError) as exc:
+        raise DataError("Naver did not return parseable historical XML") from exc
+    header = root.find("chartdata")
+    if root.tag != "protocol" or header is None or header.get("symbol") != symbol:
+        raise DataError("Unexpected Naver history payload")
+    rows = []
+    for item in header.findall("item"):
+        pieces = (item.get("data") or "").split("|")
+        if len(pieces) != 6:
+            raise DataError("Malformed Naver OHLCV item")
+        try:
+            dt = datetime.strptime(pieces[0], "%Y%m%d").date().isoformat()
+            vals = [float(v) for v in pieces[1:]]
+        except (ValueError, TypeError) as exc:
+            raise DataError("Malformed Naver OHLCV fields") from exc
+        rows.append(dict(zip(
+            ("date", "open", "high", "low", "close", "volume"), (dt, *vals),
+        )))
+    if len(rows) < 80:
+        raise DataError("Insufficient Naver daily history")
+    return normalize(pd.DataFrame(rows), today=today.isoformat()).tail(bars).reset_index(drop=True)
+
+
 @lru_cache(maxsize=1)
 def _kis_token() -> str:
     key, secret = os.getenv("KIS_APP_KEY"), os.getenv("KIS_APP_SECRET")
@@ -196,6 +248,8 @@ def fetch(asset: dict) -> pd.DataFrame:
         return upbit_daily(symbol, bars)
     if provider == "stooq":
         return stooq_daily(symbol, bars)
+    if provider == "naver":
+        return naver_daily(symbol, bars)
     if provider == "kis":
         return kis_daily(symbol, bars)
     if provider == "csv":
