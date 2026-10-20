@@ -96,6 +96,47 @@ def cmd_agent_compare(args: argparse.Namespace) -> int:
     return 2 if failed else 0
 
 
+def cmd_qlib_compare(args: argparse.Namespace) -> int:
+    """Actual Qlib LGBModel benchmark with disjoint OOS windows."""
+    import hashlib
+    from .qlib_bridge import qlib_walk_forward
+
+    settings, assets = load_config(args.config)
+    asset = _asset(assets, args.symbol)
+    frame = fetch(asset)
+    periods = 365 if asset.get("kind") == "crypto" else 252
+    result = qlib_walk_forward(frame, settings, args.state_dir,
+                               annual_periods=periods)
+    payload = frame.to_csv(index=False).encode("utf-8")
+    checksum = hashlib.sha256(payload).hexdigest()
+    snapshot = (Path(args.report_dir) / "snapshots" /
+                (safe_filename(asset_id(asset)) + "__" + checksum[:16] + ".csv"))
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    if not snapshot.exists():
+        # Frozen local input for exact replay, never committed to Git.
+        snapshot.write_bytes(payload)
+    result.update({
+        "provider": asset["provider"], "symbol": asset["symbol"],
+        "is_synthetic": asset["provider"] == "demo",
+        "dataset_sha256": checksum,
+        "dataset_snapshot": str(snapshot),
+        "bars": len(frame),
+        "last_completed_date": frame.iloc[-1]["date"].date().isoformat(),
+    })
+    dest = Path(args.report_dir) / (
+        safe_filename(asset_id(asset)) + "__qlib_compare.json"
+    )
+    _write_json(dest, result)
+    print(f"{asset['symbol']}: Qlib LGBModel / baseline / buy-hold, "
+          f"{len(result['folds'])} OOS folds (real orders OFF)")
+    for group, row in result["out_of_sample_summary"].items():
+        print(f"  {group}: net={row['compounded_return']:.3%}, "
+              f"double-cost={row['compounded_return_2x_cost']:.3%}, "
+              f"orders={row['orders']}")
+    print(f"Report: {dest}")
+    return 0
+
+
 def cmd_freeze(args: argparse.Namespace) -> int:
     settings, assets = load_config(args.config)
     asset = _asset(assets, args.symbol)
@@ -167,9 +208,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-dir", default="reports")
     parser.add_argument("--db", default="paper.db")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("research", "freeze", "paper", "status", "agent-compare"):
+    for name in ("research", "freeze", "paper", "status", "agent-compare", "qlib-compare"):
         p = sub.add_parser(name)
-        p.add_argument("--symbol", required=name in ("freeze", "paper"))
+        p.add_argument("--symbol", required=name in ("freeze", "paper", "qlib-compare"))
         if name == "agent-compare":
             p.add_argument("--agent-mode", choices=["mock", "local"], default="local")
             p.add_argument("--llm-url", default="http://127.0.0.1:8000/v1")
@@ -179,8 +220,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return {"research": cmd_research, "freeze": cmd_freeze,
                 "paper": cmd_paper, "status": cmd_status,
-                "agent-compare": cmd_agent_compare}[args.command](args)
-    except (DataError, ValueError, KeyError, OSError) as exc:
+                "agent-compare": cmd_agent_compare, "qlib-compare": cmd_qlib_compare}[args.command](args)
+    except (DataError, ValueError, KeyError, OSError, RuntimeError, ImportError) as exc:
         print(f"FAIL CLOSED: {exc}", file=sys.stderr)
         return 2
 

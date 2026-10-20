@@ -43,6 +43,6 @@ def load_config(path: str | Path) -> tuple[Settings, list[dict]]:
     if not isinstance(assets, list):
         raise ValueError("assets must be a list")
     for asset in assets:
-        if asset.get("provider") not in {"upbit", "stooq", "kis", "csv", "demo"}:
+        if asset.get("provider") not in {"upbit", "stooq", "kis", "naver", "csv", "demo"}:
             raise ValueError(f"Unsupported provider: {asset.get('provider')}")
     return settings, assets

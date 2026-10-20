@@ -1,0 +1,12 @@
+{
+  "assets": [
+    {"provider": "upbit", "symbol": "KRW-BTC", "kind": "crypto", "currency": "KRW", "bars": 2000},
+    {"provider": "upbit", "symbol": "KRW-ETH", "kind": "crypto", "currency": "KRW", "bars": 2000},
+    {"provider": "naver", "symbol": "005930", "kind": "stock", "currency": "KRW", "bars": 1800}
+  ],
+  "fee_bps": 10,
+  "slippage_bps": 5,
+  "max_position_fraction": 0.20,
+  "initial_cash": 1000000,
+  "max_drawdown": 0.25
+}
