@@ -265,6 +265,29 @@ async function updateQuoteQuality() {
       $(id).textContent="—";
   }
 }
+async function updateLaneCoverage(){
+  try{
+    const r=await fetch("/api/research-lanes",{cache:"no-store"});
+    if(!r.ok)throw new Error("Lane comparisons unavailable");
+    const d=await r.json();
+    const count=(d.coverage||[]).reduce((n,x)=>n+x.recorded_due_dates,0);
+    const missing=(d.coverage||[]).reduce((n,x)=>n+x.missing_due_dates,0);
+    const locked=d.net_return_by_strategy===null;
+    $("lane-review-status").textContent=d.status==="WAITING_FOR_FUTURE_CUTOFF"
+      ?"평가 종료 전 잠금":d.status==="DESCRIPTIVE_MANUAL_REVIEW_ONLY"
+      ?"수동 검토 가능":"비교 보류";
+    $("lane-review-detail").textContent="독립 가상계좌 "+d.registered_accounts+
+      "개 · 기한 내 관측 "+count+"건 · 누락 "+missing+"건 · "+
+      (locked?"수익률 공개 잠금":"90일 종료 후 기술적 비교 가능");
+    $("lane-review-caveat").textContent=d.issues?.length
+      ? "검토 필요: "+d.issues.join(", ")
+      : "같은 날짜·원금·비중·가정비용·공개 시세 차이 확인; 블라인드 검증이나 실제 거래 수익성 증거가 아닙니다.";
+  }catch(error){
+    $("lane-review-status").textContent="조회 불가";
+    $("lane-review-detail").textContent="독립 가상계좌 비교 기준을 확인할 수 없습니다.";
+    $("lane-review-caveat").textContent="일반 운영 서비스 상태에는 영향이 없습니다.";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -276,7 +299,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality()]);}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;
