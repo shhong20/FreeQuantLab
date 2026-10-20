@@ -24,11 +24,13 @@ ROUTES = {
 
 
 def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forward",
-                 alerts_file: str | Path = "state/watchdog-history.json"):
+                 alerts_file: str | Path = "state/watchdog-history.json",
+                 protocol_file: str | Path = "protocols/2026-10-20-btc-eth-90d.json"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
     daily_dir = Path(reports_dir).resolve()
     alert_store = Path(alerts_file).resolve()
+    protocol_source = Path(protocol_file).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -72,6 +74,19 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                             "application/json; charset=utf-8")
                 return
             path = urlsplit(self.path).path
+            if path == "/api/protocol-status":
+                if not protocol_source.is_file():
+                    self._reply(404, {"status":"not_registered"},
+                                "application/json; charset=utf-8")
+                    return
+                try:
+                    from .prospective import inspect_protocol
+                    self._reply(200, inspect_protocol(database, protocol_source),
+                                "application/json; charset=utf-8")
+                except (OSError, ValueError, KeyError, RuntimeError):
+                    self._reply(503, {"status":"unavailable"},
+                                "application/json; charset=utf-8")
+                return
             if path == "/api/status":
                 try:
                     self._reply(200, snapshot(database), "application/json; charset=utf-8")

@@ -251,3 +251,46 @@ def test_missing_report_and_missing_inbox_are_safe(tmp_path):
         assert not (tmp_path/"no.json").exists()
     finally:
         httpd.shutdown();thread.join(timeout=3);httpd.server_close()
+
+
+def test_protocol_dashboard_api_hides_interim_future_returns(tmp_path):
+    from datetime import datetime, timezone
+    from http.server import ThreadingHTTPServer
+    from quantlab.prospective import lock_protocol
+    db=database(tmp_path)
+    protocol=tmp_path/"frozen.json"
+    clock=datetime(2026,10,20,3,15,tzinfo=timezone.utc)
+    lock_protocol(db,protocol,now=clock,days=90)
+    httpd=ThreadingHTTPServer(("127.0.0.1",0),
+                               make_handler(db,protocol_file=protocol))
+    thread=threading.Thread(target=httpd.serve_forever,daemon=True)
+    thread.start()
+    try:
+        base=f"http://127.0.0.1:{httpd.server_address[1]}"
+        # Pre-cutoff protocol never leaks interim results.
+        from unittest.mock import patch
+        with patch("quantlab.prospective._utc",return_value=clock):
+            with urlopen(base+"/api/protocol-status",timeout=4) as response:
+                data=json.load(response)
+        assert data["status"]=="LOCKED_UNTIL_FUTURE_CUTOFF"
+        assert data["observed_strategy_returns"] is None
+        assert data["real_orders_enabled"] is False
+        assert "strategies" not in data
+    finally:
+        httpd.shutdown();thread.join(timeout=3);httpd.server_close()
+
+
+def test_protocol_api_fails_closed_if_missing_manifest(tmp_path):
+    from http.server import ThreadingHTTPServer
+    db=database(tmp_path)
+    httpd=ThreadingHTTPServer(("127.0.0.1",0),
+                              make_handler(db,protocol_file=tmp_path/"missing.json"))
+    thread=threading.Thread(target=httpd.serve_forever,daemon=True)
+    thread.start()
+    try:
+        base=f"http://127.0.0.1:{httpd.server_address[1]}"
+        with pytest.raises(HTTPError) as err:
+            urlopen(base+"/api/protocol-status",timeout=4)
+        assert err.value.code==404
+    finally:
+        httpd.shutdown();thread.join(timeout=3);httpd.server_close()

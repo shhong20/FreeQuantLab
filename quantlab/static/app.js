@@ -212,6 +212,27 @@ async function refreshReportsAndAlerts() {
     }catch(error){history.appendChild(element("div","waiting","알림 이력 형식 확인 필요"));}
   }else{history.appendChild(element("div","waiting","경고 기록 연결 대기 중"));}
 }
+async function updateProspectiveProtocol(){
+  try {
+    const res=await fetch("/api/protocol-status",{cache:"no-store"});
+    if(!res.ok)throw new Error("Protocol status unavailable");
+    const data=await res.json();
+    const locked=data.status==="LOCKED_UNTIL_FUTURE_CUTOFF";
+    $("protocol-state").textContent=locked?"미래 평가 잠금":data.status==="OBSERVED_FOR_MANUAL_REVIEW"?"관측 완료 · 수동 검토":"검증 보류";
+    $("protocol-detail").textContent=locked
+      ? data.first_eligible_decision_utc+" ~ "+data.last_eligible_decision_utc+
+        " UTC 일봉 · 평가 기간 종료 전에는 수익률 비교 비공개"
+      : "결과가 공개되더라도 자동 투자 승인이나 통계적 유의성 확정은 불가능합니다.";
+    $("protocol-end").textContent=data.evaluation_not_before_utc
+      ? kst(data.evaluation_not_before_utc)+" 이후":"평가 대기";
+    $("protocol-caution").textContent="해시 "+(data.protocol_sha256||"").slice(0,12)+
+      " · 공개 대시보드가 있어 완전한 블라인드 검증은 아닙니다.";
+  }catch(error){
+    $("protocol-state").textContent="조회 불가";
+    $("protocol-detail").textContent="평가 원장/사전 등록 계획을 확인할 수 없습니다.";
+    $("protocol-end").textContent="—";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -223,7 +244,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await refreshReportsAndAlerts();}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;

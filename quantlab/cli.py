@@ -186,6 +186,22 @@ def cmd_paper(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prospective(args: argparse.Namespace) -> int:
+    """Pre-register a future observation window; NEVER promote or trade."""
+    from .prospective import lock_protocol, inspect_protocol
+
+    if args.db == "paper.db":
+        raise ValueError("Prospective protocol requires explicit --db state/shadow.db")
+    if args.command == "protocol-lock":
+        outcome = lock_protocol(args.db, args.protocol)
+    elif args.command == "protocol-inspect":
+        outcome = inspect_protocol(args.db, args.protocol)
+    else:
+        raise ValueError("Unknown future protocol operation")
+    print(json.dumps(outcome, ensure_ascii=False, indent=2, default=str))
+    return 2 if outcome.get("status") == "INVALID_LEDGER" else 0
+
+
 def cmd_shadow(args: argparse.Namespace) -> int:
     """Isolated research shadow accounts, not the legacy paper.db schema."""
     from .shadow import bootstrap, run_cycle, status
@@ -228,9 +244,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-dir", default="reports")
     parser.add_argument("--db", default="paper.db")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("research", "freeze", "paper", "status", "agent-compare", "qlib-compare", "shadow-bootstrap", "shadow-cycle", "shadow-status"):
+    for name in ("research", "freeze", "paper", "status", "agent-compare", "qlib-compare", "shadow-bootstrap", "shadow-cycle", "shadow-status", "protocol-lock", "protocol-inspect"):
         p = sub.add_parser(name)
         p.add_argument("--symbol", required=name in ("freeze", "paper", "qlib-compare"))
+        if name in ("protocol-lock", "protocol-inspect"):
+            p.add_argument("--protocol", required=True)
         if name == "agent-compare":
             p.add_argument("--agent-mode", choices=["mock", "local"], default="local")
             p.add_argument("--llm-url", default="http://127.0.0.1:8000/v1")
@@ -242,7 +260,8 @@ def main(argv: list[str] | None = None) -> int:
                 "paper": cmd_paper, "status": cmd_status,
                 "agent-compare": cmd_agent_compare, "qlib-compare": cmd_qlib_compare,
                 "shadow-bootstrap": cmd_shadow, "shadow-cycle": cmd_shadow,
-                "shadow-status": cmd_shadow}[args.command](args)
+                "shadow-status": cmd_shadow,
+                "protocol-lock": cmd_prospective, "protocol-inspect": cmd_prospective}[args.command](args)
     except (DataError, ValueError, KeyError, OSError, RuntimeError, ImportError) as exc:
         print(f"FAIL CLOSED: {exc}", file=sys.stderr)
         return 2
