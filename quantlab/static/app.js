@@ -243,6 +243,28 @@ async function updateProspectiveProtocol(){
     $("protocol-coverage").textContent="수집 상태 조회 실패";
   }
 }
+async function updateQuoteQuality() {
+  try {
+    const res=await fetch("/api/quote-quality",{cache:"no-store"});
+    if(!res.ok)throw new Error("quote quality unavailable");
+    const q=await res.json();
+    $("quote-quality-state").textContent=q.status==="AWAITING_FIRST_OBSERVATION"
+      ? "첫 관측 대기":q.status==="PASS"?"증거 기록 일치":"시세 증거 점검 필요";
+    $("quote-covered").textContent=q.events_with_quote_evidence+" / "+q.virtual_event_rows+"건";
+    $("quote-gap").textContent=q.max_abs_public_ticker_prev_close_gap_bps==null
+      ? "—":q.max_abs_public_ticker_prev_close_gap_bps.toFixed(1)+" bps";
+    $("quote-lag").textContent=q.max_public_ticker_minutes_after_close==null
+      ? "—":q.max_public_ticker_minutes_after_close.toFixed(1)+"분";
+    $("quote-cost").textContent=money(q.model_assumed_total_cost_krw);
+    $("quote-disclaimer").textContent="전일 종가와 시세 차이는 시장 가격변동 지표일 뿐 실제 슬리피지가 아닙니다. "
+      +"기록되지 않은 증거 "+q.legacy_events_without_quote_evidence+"건. "
+      +"모든 비용은 가정치이며 실제 호가·주문체결 자료가 없습니다.";
+  } catch(error) {
+    $("quote-quality-state").textContent="시세 증거 조회 실패";
+    for(const id of ["quote-covered","quote-gap","quote-lag","quote-cost"])
+      $(id).textContent="—";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -254,7 +276,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol()]);}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;

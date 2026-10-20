@@ -15,3 +15,10 @@
 .protocol-side strong{color:#88e7ca;font-size:14px;font-variant-numeric:tabular-nums}
 .protocol-side small{color:#718e9c;font-size:10px;max-width:300px}
 @media(max-width:690px){.protocol-line{flex-direction:column;align-items:flex-start}.protocol-side{align-items:flex-start;text-align:left}}
+
+.quote-evidence-panel{margin-bottom:19px}
+.quote-evidence-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 17px}
+.quote-evidence-item{background:#12232d;border:1px solid #25404b;border-radius:9px;padding:15px;display:flex;flex-direction:column;gap:8px}
+.quote-evidence-item span{color:#89a8b5;font-size:11px}
+.quote-evidence-item strong{color:#d9eee7;font-size:19px;font-variant-numeric:tabular-nums}
+@media(max-width:820px){.quote-evidence-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

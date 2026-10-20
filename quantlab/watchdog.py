@@ -20,6 +20,7 @@ from urllib.request import urlopen
 from .forward_reports import report as build_report, save_report, _atomic
 from .monitor import snapshot
 from .ledger_audit import audit_shadow_ledger, evaluate_manual_review
+from .quote_quality import execution_proxy_quality
 
 WINDOWS_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 # Only activated for real anomaly transitions, never during an initial no-alert check.
@@ -302,17 +303,26 @@ def check(
             ))
             # No nominal daily performance report on compromised accounting.
         elif state != "DEGRADED":
-            report_data = build_report(shadow_db, now=instant)
-            report_data["ledger_integrity"] = {
-                "status": "PASS", "accounts": ledger_evidence["accounts"],
-                "events": ledger_evidence["events"],
-            }
-            report_data["manual_review"] = evaluate_manual_review(
-                report_data, ledger_evidence
-            )
-            if compliance is not None:
-                report_data["protocol_collection_compliance"] = compliance
-            daily_paths = save_report(report_data, report_dir)
+            quality = execution_proxy_quality(shadow_db)
+            if quality["status"] == "FAIL":
+                state = "DEGRADED"
+                alerts.append(_synthetic_alert(
+                    "PAPER_QUOTE_EVIDENCE_MISMATCH",
+                    "A saved public ticker / simulated virtual fill inconsistency was detected.",
+                ))
+            else:
+                report_data = build_report(shadow_db, now=instant)
+                report_data["execution_proxy_quality"] = quality
+                report_data["ledger_integrity"] = {
+                    "status": "PASS", "accounts": ledger_evidence["accounts"],
+                    "events": ledger_evidence["events"],
+                }
+                report_data["manual_review"] = evaluate_manual_review(
+                    report_data, ledger_evidence
+                )
+                if compliance is not None:
+                    report_data["protocol_collection_compliance"] = compliance
+                daily_paths = save_report(report_data, report_dir)
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
         state = "DEGRADED"
         alerts.append(_synthetic_alert(

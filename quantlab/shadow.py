@@ -128,6 +128,13 @@ def _connection(path: str | Path) -> sqlite3.Connection:
       created_at TEXT NOT NULL,
       PRIMARY KEY(track_id,decision_date)
     );
+    CREATE TABLE IF NOT EXISTS shadow_quote_evidence (
+      symbol TEXT NOT NULL, decision_date TEXT NOT NULL,
+      session_date TEXT NOT NULL, prior_completed_close REAL NOT NULL,
+      public_ticker_price REAL NOT NULL, observed_at_utc TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source='upbit_public_ticker'),
+      PRIMARY KEY(symbol,decision_date)
+    );
     CREATE TABLE IF NOT EXISTS shadow_runs (
       run_id INTEGER PRIMARY KEY AUTOINCREMENT,
       created_at TEXT NOT NULL, status TEXT NOT NULL,
@@ -336,6 +343,25 @@ def run_cycle(
                 if session != current.date().isoformat():
                     raise ValueError("Quote does not belong to current UTC session")
                 validate_public_quote(quality["last_completed_close"], price)
+                # One quote evidence row is shared by all virtual tracks for
+                # this asset/day. It is observational evidence only: NOT an
+                # executable ask/bid, exchange acknowledgement or real fill.
+                with con:
+                    existing_evidence = con.execute(
+                        "SELECT 1 FROM shadow_quote_evidence "
+                        "WHERE symbol=? AND decision_date=?", (key[1],day),
+                    ).fetchone()
+                    if existing_evidence is not None:
+                        raise ValueError("Quote evidence already frozen for asset/day; "
+                                         "partial or failed cycle requires manual review")
+                    con.execute(
+                        "INSERT INTO shadow_quote_evidence "
+                        "(symbol,decision_date,session_date,prior_completed_close,"
+                        "public_ticker_price,observed_at_utc,source) "
+                        "VALUES (?,?,?,?,?,?,?)",
+                        (key[1],day,session,float(quality["last_completed_close"]),
+                         float(price),current.isoformat(),"upbit_public_ticker"),
+                    )
                 for row in ready:
                     try:
                         target = _target(data, json.loads(row["spec_json"]))

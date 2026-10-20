@@ -294,3 +294,18 @@ def test_protocol_api_fails_closed_if_missing_manifest(tmp_path):
         assert err.value.code==404
     finally:
         httpd.shutdown();thread.join(timeout=3);httpd.server_close()
+
+
+def test_quote_quality_api_is_readonly_and_never_implies_real_fills(server):
+    with urlopen(server+"/api/quote-quality",timeout=4) as result:
+        assert result.status==200
+        info=json.load(result)
+    assert info["status"]=="AWAITING_FIRST_OBSERVATION"
+    assert info["events_with_quote_evidence"]==0
+    assert info["not_actual_fill_quality"] is True
+    assert info["real_orders_enabled"] is False
+    assert info["max_abs_public_ticker_prev_close_gap_bps"] is None
+    req=Request(server+"/api/quote-quality",method="POST",data=b'{}')
+    with pytest.raises(HTTPError) as err:
+        urlopen(req,timeout=4)
+    assert err.value.code==405

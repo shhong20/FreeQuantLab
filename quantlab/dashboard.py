@@ -87,6 +87,15 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                     self._reply(503, {"status":"unavailable"},
                                 "application/json; charset=utf-8")
                 return
+            if path == "/api/quote-quality":
+                try:
+                    from .quote_quality import execution_proxy_quality
+                    self._reply(200, execution_proxy_quality(database),
+                                "application/json; charset=utf-8")
+                except (OSError, ValueError, KeyError, RuntimeError):
+                    self._reply(503, {"status":"unavailable"},
+                                "application/json; charset=utf-8")
+                return
             if path == "/api/protocol-status":
                 if not protocol_source.is_file():
                     self._reply(404, {"status":"not_registered"},
