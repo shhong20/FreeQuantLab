@@ -71,10 +71,42 @@ class LocalLLMAgent:
         self.timeout = timeout
 
     def _ask(self, role: str, payload: dict) -> dict:
+        # Ollama's OpenAI-compatible endpoint supports strict JSON-schema
+        # constrained decoding. All fields are validated again after decoding.
+        if role == "alpha_proposer":
+            fields = {
+                "type": "object", "additionalProperties": False,
+                "required": ["factors"],
+                "properties": {"factors": {
+                    "type": "array", "minItems": 1, "maxItems": 5,
+                    "items": {
+                        "type": "object", "additionalProperties": False,
+                        "required": ["name", "feature", "direction", "threshold"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "feature": {"type": "string", "enum": list(FEATURE_COLUMNS)},
+                            "direction": {"type": "string", "enum": ["gt", "lt"]},
+                            "threshold": {"type": "number"},
+                        },
+                    },
+                }},
+            }
+        elif role == "risk_reviewer":
+            fields = {
+                "type": "object", "additionalProperties": False,
+                "required": ["exposure_scale", "reason"],
+                "properties": {
+                    "exposure_scale": {"type": "number", "enum": [0, 0.5, 1]},
+                    "reason": {"type": "string"},
+                },
+            }
+        else:
+            raise AgentError("Unsupported Agent role")
         req = {"model": self.model, "temperature": 0, "messages": [
             {"role": "system", "content": "You are a constrained finance RESEARCH agent. Output only one JSON object. No code or URLs. No assurances of profit. Follow the provided schema."},
             {"role": "user", "content": json.dumps({"role": role, **payload}, ensure_ascii=False, allow_nan=False)},
         ]}
+        req["response_format"] = {"type": "json_schema", "json_schema": {"name": role, "strict": True, "schema": fields}}
         try:
             # Disable environment proxies and all redirects: a local endpoint must not
             # redirect the training summary to a non-local server.
