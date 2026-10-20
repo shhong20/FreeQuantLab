@@ -1,0 +1,9 @@
+{
+  "assets": [
+    {"provider": "demo", "symbol": "SYNTHETIC-ONLY", "kind": "crypto", "currency": "TEST", "bars": 1000, "seed": 17}
+  ],
+  "fee_bps": 10,
+  "slippage_bps": 5,
+  "initial_cash": 1000000,
+  "max_position_fraction": 0.20
+}

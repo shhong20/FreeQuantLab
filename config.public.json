@@ -1,0 +1,18 @@
+{
+  "assets": [
+    {"provider": "upbit", "symbol": "KRW-BTC", "kind": "crypto", "currency": "KRW", "bars": 900},
+    {"provider": "upbit", "symbol": "KRW-ETH", "kind": "crypto", "currency": "KRW", "bars": 900},
+    {"provider": "stooq", "symbol": "aapl.us", "kind": "stock", "currency": "USD", "bars": 900},
+    {"provider": "stooq", "symbol": "spy.us", "kind": "stock", "currency": "USD", "bars": 900}
+  ],
+  "fee_bps": 10,
+  "slippage_bps": 5,
+  "min_test_sharpe": 0.25,
+  "min_test_orders": 3,
+  "max_drawdown": 0.25,
+  "paper_min_days": 30,
+  "paper_min_orders": 8,
+  "initial_cash": 1000000,
+  "max_position_fraction": 0.20,
+  "max_paper_daily_loss": 0.03
+}
