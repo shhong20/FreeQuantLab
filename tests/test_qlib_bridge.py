@@ -50,6 +50,9 @@ def test_qlib_walk_forward_same_four_folds_and_no_live_promotion(monkeypatch, tm
     assert report["real_orders_enabled"] is False
     assert report["promotion_eligible"] is False
     assert report["engine"] == "qlib.contrib.model.gbdt.LGBModel"
+    assert report["diagnostics"]["promotes_to_paper_or_live"] is False
+    assert report["diagnostics"]["comparisons"]["Q_qlib_lgbmodel"]["exploratory_only"] is True
+    assert "regime_attribution" in report["folds"][0]["results"]["Q_qlib_lgbmodel"]
     assert len(report["folds"]) == 4
     assert all(
         "Q_qlib_lgbmodel" in fold["results"] for fold in report["folds"]

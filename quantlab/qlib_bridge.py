@@ -14,6 +14,7 @@ import pandas as pd
 
 from .features import FEATURE_COLUMNS, build_features, forward_label
 from .settings import Settings
+from .diagnostics import daily_net_returns, trailing_regimes, regime_attribution, diagnostic_summary
 from .engine import Candidate, signals, simulate
 from .agent_lab import walk_forward_windows, _baseline_pool, _best_on_validation, _test_signal
 
@@ -125,6 +126,8 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
     from dataclasses import replace
     df = df.reset_index(drop=True)
     folds = []
+    oos_paths = []
+    regime_tags = trailing_regimes(df)
     groups = ("A_baseline", "Q_qlib_lgbmodel", "buy_hold_same_exposure")
     for i, (train, val, test) in enumerate(walk_forward_windows(len(df)), 1):
         pool = _baseline_pool(df, train)
@@ -145,7 +148,10 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
         results = {}
         stress_settings = replace(settings, fee_bps=settings.fee_bps * 2,
                                   slippage_bps=settings.slippage_bps * 2)
+        paths = {}
         for group, signal in signals_by_group.items():
+            path = daily_net_returns(df, signal, val, test, settings)
+            paths[group] = path
             results[group] = {
                 "validation": a_validation if group == "A_baseline"
                 else q_validation if group == "Q_qlib_lgbmodel" else None,
@@ -154,6 +160,12 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
                     df, signal, val, test, stress_settings, annual_periods
                 ),
             }
+            if not np.isclose(np.prod(1 + path) - 1, results[group]["test"]["total_return"], rtol=1e-9, atol=1e-10):
+                raise ValueError("Diagnostic path disagrees with backtest")
+            results[group]["regime_attribution"] = regime_attribution(
+                df, path, val, test, regimes=regime_tags
+            )
+        oos_paths.append(paths)
         results["A_baseline"]["strategy"] = name
         results["Q_qlib_lgbmodel"]["strategy"] = "Qlib LGBModel binary / 0.55 fixed"
         folds.append({
@@ -183,4 +195,5 @@ def qlib_walk_forward(df: pd.DataFrame, settings: Settings, state_dir: str | Pat
         "real_orders_enabled": False,
         "folds": folds,
         "out_of_sample_summary": summaries,
+        "diagnostics": diagnostic_summary(oos_paths),
     }
