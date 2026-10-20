@@ -1,0 +1,16 @@
+[Unit]
+Description=Independent Exaone/Qlib virtual-lane due-date and model integrity watchdog
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.isolated_watchdog --policy ops/isolated_paper_scheduler.json --state-db state/isolated-watchdog.db --report-dir reports/isolated --windows-toast
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/isolated
+StandardOutput=journal
+StandardError=journal

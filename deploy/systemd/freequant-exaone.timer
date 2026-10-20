@@ -1,0 +1,15 @@
+[Unit]
+Description=Exaone fixed-factor forward virtual observations (KST)
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Timer]
+OnCalendar=*-*-* 09:18:00
+OnCalendar=*-*-* 09:28:00
+OnCalendar=*-*-* 09:38:00
+OnCalendar=*-*-* 10:05:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-exaone.service
+
+[Install]
+WantedBy=timers.target

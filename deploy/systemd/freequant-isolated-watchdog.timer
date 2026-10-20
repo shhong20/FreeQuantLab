@@ -1,0 +1,14 @@
+[Unit]
+Description=Independent frozen Agent/Qlib coverage/ledger validation (KST)
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Timer]
+OnCalendar=*-*-* 10:35:00
+OnCalendar=*-*-* 12:35:00
+OnCalendar=*-*-* 18:35:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-isolated-watchdog.service
+
+[Install]
+WantedBy=timers.target

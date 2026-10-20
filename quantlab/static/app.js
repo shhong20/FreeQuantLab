@@ -288,6 +288,28 @@ async function updateLaneCoverage(){
     $("lane-review-caveat").textContent="일반 운영 서비스 상태에는 영향이 없습니다.";
   }
 }
+async function updateIsolatedWatchdog(){
+  try {
+    const response=await fetch("/api/isolated-status",{cache:"no-store"});
+    if(!response.ok)throw new Error("independent watcher not ready");
+    const data=await response.json();
+    const coverage=data.coverage||[];
+    const missing=coverage.reduce((sum,item)=>sum+(item.missing_due_days||0),0);
+    const recorded=coverage.reduce((sum,item)=>sum+(item.recorded_due_days||0),0);
+    $("isolated-monitor-state").textContent=data.status==="WAITING_FIRST_DUE"
+      ?"첫 일봉 대기":data.status==="COLLECTING"?"관측 정상":
+      data.status==="WARNING"?"기한·실행 경고":"무결성 점검 필요";
+    $("isolated-monitor-summary").textContent="2개 연구 원장 · 가상계좌 4개 · "+
+      "기한 내 기록 "+recorded+"건 · 누락 "+missing+"건 · "+
+      "독립 경고 "+(data.alerts?.length||0)+"개";
+    $("isolated-monitor-note").textContent="최종 점검 "+kst(data.checked_at_utc)+
+      " · 실거래 비활성 · 기존 90일 연구 원장과 별도";
+  }catch(error){
+    $("isolated-monitor-state").textContent="감시 기록 확인 필요";
+    $("isolated-monitor-summary").textContent="독립 감시 보고서가 아직 없거나 읽을 수 없습니다.";
+    $("isolated-monitor-note").textContent="가상계좌 상태를 정상으로 추정하지 않습니다.";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -299,7 +321,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage()]);}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage(),updateIsolatedWatchdog()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;

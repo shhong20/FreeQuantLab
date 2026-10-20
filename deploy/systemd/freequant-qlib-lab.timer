@@ -1,0 +1,15 @@
+[Unit]
+Description=Qlib frozen-checkpoint forward virtual observations (KST)
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Timer]
+OnCalendar=*-*-* 09:21:00
+OnCalendar=*-*-* 09:31:00
+OnCalendar=*-*-* 09:41:00
+OnCalendar=*-*-* 10:08:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-qlib-lab.service
+
+[Install]
+WantedBy=timers.target
