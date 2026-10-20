@@ -12,6 +12,7 @@ dependencies = ["numpy>=1.26,<3", "pandas>=2.0,<3", "scikit-learn>=1.4,<2", "req
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
 ml = ["lightgbm>=4,<5"]
+qlib = ["pyqlib==0.9.7"]
 
 [project.scripts]
 freequant = "quantlab.cli:main"

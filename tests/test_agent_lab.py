@@ -51,6 +51,38 @@ def test_model_json_schema_rejected_without_mock_fallback(monkeypatch):
         agent.review({"validation": {"sharpe": 0.1}})
 
 
+def test_local_fenced_json_is_accepted_but_surrounding_prose_rejected(monkeypatch):
+    from quantlab.agent_lab import LocalLLMAgent, AgentError
+
+    responses = [
+        '```json\n{"factors":[{"name":"m","feature":"r5","direction":"gt","threshold":0.0}]}\n```',
+        'the answer is {"factors":[]}',
+    ]
+
+    class Response:
+        status_code = 200
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"choices": [{"message": {"content": responses.pop(0)}}]}
+
+    class FakeSession:
+        trust_env = True
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            pass
+        def post(self, url, **kwargs):
+            assert kwargs["allow_redirects"] is False
+            return Response()
+
+    monkeypatch.setattr("requests.Session", FakeSession)
+    agent = LocalLLMAgent("http://127.0.0.1:11434/v1", "exaone3.5:latest")
+    assert agent.propose({"bar_count": 400})[0].name == "m"
+    with pytest.raises(AgentError):
+        agent.propose({"bar_count": 400})
+
+
 def test_model_payload_contains_training_not_future_prices(monkeypatch):
     agent = LocalLLMAgent("http://127.0.0.1:8000/v1", "test")
     requests_seen = []
