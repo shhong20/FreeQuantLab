@@ -1,0 +1,24 @@
+[Unit]
+Description=FreeQuantLab localhost-only read-only dashboard
+Documentation=https://github.com/shhong20/FreeQuantLab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.dashboard --db state/shadow.db --bind 127.0.0.1 --port 8788
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/hong/apps/FreeQuantLab/state
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

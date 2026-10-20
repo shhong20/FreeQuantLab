@@ -16,9 +16,13 @@ qlib = ["pyqlib==0.9.7"]
 
 [project.scripts]
 freequant = "quantlab.cli:main"
+freequant-monitor = "quantlab.dashboard:main"
 
 [tool.setuptools.packages.find]
 include = ["quantlab*"]
+
+[tool.setuptools.package-data]
+quantlab = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

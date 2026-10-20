@@ -19,3 +19,6 @@ config.private.json
 
 /mlruns/
 /home/
+
+# Local wheel build output
+build/
