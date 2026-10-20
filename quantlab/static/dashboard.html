@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>FreeQuantLab · Forward Paper Monitor</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<div class="ambient" aria-hidden="true"></div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-symbol">F<span>Q</span></div><div class="brand-text"><b>FREEQUANT</b><span>LAB / MONITOR</span></div></div>
+    <div class="sidebar-section">WORKSPACE</div>
+    <div class="nav-item current"><span class="nav-icon">◈</span> 전략 모니터링 <span class="nav-dot"></span></div>
+    <div class="nav-item"><span class="nav-icon">▤</span> 가상계좌 관찰</div>
+    <div class="nav-item"><span class="nav-icon">⌁</span> 운영 로그</div>
+    <div class="sidebar-bottom">
+      <div class="safe-box"><div class="safe-icon">⌁</div><div><strong>RESEARCH SANDBOX</strong><span>실거래 주문 완전 차단</span></div></div>
+      <div class="sidebar-mini">Local-only <span class="local-dot"></span> 127.0.0.1</div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div class="breadcrumbs">FreeQuantLab <span>/</span> 운영 모니터링</div>
+      <div class="top-meta"><span class="connection" id="connection">● 연결 확인 중</span><span id="last-refreshed">-</span><button type="button" id="refresh" class="refresh">↻ 새로고침</button></div>
+    </div>
+    <header class="header">
+      <div><div class="eyebrow"><span class="eyebrow-line"></span>FORWARD PAPER TRADING</div><h1>전략 운영 현황<span class="title-period">.</span></h1><p class="subtitle">실제 신규 시세로 관찰한 가상 실험만 집계합니다. 과거 백테스트와 실계좌 성과가 아닙니다.</p></div>
+      <div class="headline-status"><span class="pulse-dot"></span><span id="head-status">관측 상태 확인 중</span></div>
+    </header>
+    <section class="metrics" aria-label="전체 주요 지표">
+      <article class="metric"><div class="metric-label">등록 전략 <span class="metric-glyph">⌗</span></div><div class="metric-value" id="metric-tracks">—</div><div class="metric-sub" id="metric-assets">BTC · ETH</div></article>
+      <article class="metric"><div class="metric-label">실제 미래 관찰 <span class="metric-glyph">↗</span></div><div class="metric-value" id="metric-events">—</div><div class="metric-sub">선행 가상 거래·보유 기록</div></article>
+      <article class="metric"><div class="metric-label">가상 주문 <span class="metric-glyph">⇄</span></div><div class="metric-value" id="metric-orders">—</div><div class="metric-sub">실제 거래소 주문 0건</div></article>
+      <article class="metric"><div class="metric-label">위험 경고 <span class="metric-glyph">⚑</span></div><div class="metric-value" id="metric-alerts">—</div><div class="metric-sub" id="metric-alert-label">감시 중</div></article>
+    </section>
+    <section class="wide-grid">
+      <article class="panel overview">
+        <div class="section-top"><div><div class="section-eyebrow">STRATEGY PERFORMANCE</div><h2>가상계좌 성과 추이</h2></div><div class="filters"><button type="button" class="pill active" data-symbol="all">전체</button><button type="button" class="pill" data-symbol="KRW-BTC">BTC</button><button type="button" class="pill" data-symbol="KRW-ETH">ETH</button></div></div>
+        <div class="chart-note">가상 원화 잔고 · 등록 시점의 자본 100만원 기준</div>
+        <div class="chart-wrap"><canvas id="equity-chart" role="img" aria-label="전략별 가상자산 관측 그래프"></canvas><div id="chart-empty" class="chart-empty">첫 번째 미래 시세 관측을 기다리는 중입니다.<small>전략 등록 이전의 가격으로 수익률을 계산하지 않습니다.</small></div></div>
+        <div class="legend" id="chart-legend"></div>
+      </article>
+      <article class="panel alert-panel">
+        <div class="section-top"><div><div class="section-eyebrow">OPERATIONS HEALTH</div><h2>이상 징후 감시</h2></div><span class="badge-soft" id="alerts-count">대기 중</span></div>
+        <div class="health-summary" id="health-summary">운영 상태를 조회하고 있습니다.</div>
+        <div class="alerts-list" id="alerts-list"></div>
+        <div class="operation-mini"><span>최종 실행</span><strong id="last-run">—</strong></div>
+        <div class="operation-mini"><span>다음 일봉 확인 시간</span><strong>매일 09:15 KST</strong></div>
+      </article>
+    </section>
+    <section class="panel tracking">
+      <div class="section-top"><div><div class="section-eyebrow">VIRTUAL PORTFOLIOS</div><h2>전략별 독립 가상계좌</h2></div><span class="table-side-label">각 계좌 독립 운영 / 수익 합산 금지</span></div>
+      <div class="table-scroller"><table><thead><tr><th>자산 / 전략</th><th>관측 상태</th><th class="align-right">가상 평가액</th><th class="align-right">관측 수익률</th><th class="align-right">최대 낙폭</th><th class="align-right">가상 주문</th><th>마지막 관측</th></tr></thead><tbody id="tracks-table"><tr><td colspan="7" class="waiting">데이터 불러오는 중...</td></tr></tbody></table></div>
+    </section>
+    <section class="bottom-grid">
+      <article class="panel lower"><div class="section-top"><div><div class="section-eyebrow">ORDER JOURNAL</div><h2>최근 가상 거래 내역</h2></div></div><div class="log-scroller"><table><thead><tr><th>관측일</th><th>자산</th><th>전략</th><th>구분</th><th class="align-right">관측가</th></tr></thead><tbody id="events-table"><tr><td colspan="5" class="waiting">새로 기록된 시세가 없습니다.</td></tr></tbody></table></div></article>
+      <article class="panel lower"><div class="section-top"><div><div class="section-eyebrow">SERVICE ACTIVITY</div><h2>자동 실행 이력</h2></div></div><div id="runs" class="runs"><div class="waiting">이력을 확인하고 있습니다.</div></div></article>
+    </section>
+    <footer><span>FREEQUANTLAB / PAPER-ONLY ENVIRONMENT</span><span>실시간 주문 · 자동 전략 승격 · 외부 API 전송 없음</span></footer>
+  </main>
+</div>
+</body>
+</html>

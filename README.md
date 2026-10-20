@@ -150,3 +150,15 @@ python -m quantlab --db state/shadow.db shadow-status
 The systemd **user** timer in `deploy/systemd/` checks at 09:15/09:25/09:35/10:00 **Asia/Seoul** to allow retries after transient public-data failures. Idempotent SQLite events plus OS file locking prevent duplicate virtual fills. This module is kept separate from the legacy `paper.db` and from Qlib/Agent automatic promotion.
 
 [Setup, monitoring, safety and limitations](docs/FORWARD_SHADOW_PAPER.md).
+
+## Local Read-Only Monitoring Dashboard (2026-10-20)
+
+The `Shadow Paper` service now has an **on-device, localhost-only monitoring dashboard**. It displays BTC/ETH strategy-level virtual equity curves, observed (not backfilled) returns/drawdown, paper fills, last-run health and anomalies such as stale/missing daily observations, failed jobs and virtual drawdown halts.
+
+```bash
+python -m quantlab.dashboard --db state/shadow.db --bind 127.0.0.1 --port 8788
+```
+
+Open **http://localhost:8788** on the same host (with WSL localhost forwarding where applicable). It never places orders, never changes balances/strategies and cannot authorize live trading. UI/API bind to loopback only; without authentication, never expose to 0.0.0.0 or the public internet.
+
+[Deployment, systemd auto-start and anomaly-check reference](docs/MONITOR_DASHBOARD.md).
