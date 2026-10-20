@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab
-ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab --config examples/shadow_crypto.json --db state/shadow.db shadow-cycle
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab --config examples/shadow_crypto.json --db state/shadow.db shadow-cycle --protocol protocols/2026-10-20-btc-eth-90d.json
 TimeoutStartSec=180
 UMask=0077
 NoNewPrivileges=true

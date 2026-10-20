@@ -205,3 +205,17 @@ The current six frozen BTC/ETH paper strategies are now listed in a SHA-256 fing
 The protocol cannot be overwritten by the CLI and will not reveal window return scores before the deadline. **The normal dashboard still shows interim performance, so it is a preregistration, NOT a genuinely blinded holdout.** Complete records still require manual interpretation and cannot trigger real orders or strategy auto-promotion.
 
 [Full methodology, pitfalls and limitations](docs/PROSPECTIVE_MULTIPLE_TESTING.md).
+
+
+## Prospective 90-day collection integrity monitoring (2026-10-20)
+
+A separate read-only compliance monitor now checks the **SHA-256 locked protocol's exact six frozen account identities**, due UTC decision dates after the 10:20 KST daily grace period, missing/late observations and account/ledger integrity. The production paper timer runs with an explicit `--protocol` guard **before accessing any new market data**; mismatched settings or strategy/universe changes abort the cycle without writing pretend fills.
+
+```bash
+.venv/bin/python -m quantlab --db state/shadow.db protocol-check \
+  --protocol protocols/2026-10-20-btc-eth-90d.json
+```
+
+Collection counts (not return scores) are visible on the localhost dashboard and are saved in the independent daily watchdog report. Watchdog alerts on missing due days and critical protocol/ledger failures. An outage never authorizes filling missed days retrospectively, and the original 90-day results remain locked until their registered cutoff. **First protocol observation is due only after the 2026-10-21 UTC daily candle closes on 2026-10-22 KST.**
+
+[Collection runbook, timeline and no-backfill safety](docs/PROTOCOL_COLLECTION_RUNBOOK.md).
