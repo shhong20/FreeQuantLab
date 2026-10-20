@@ -219,3 +219,20 @@ A separate read-only compliance monitor now checks the **SHA-256 locked protocol
 Collection counts (not return scores) are visible on the localhost dashboard and are saved in the independent daily watchdog report. Watchdog alerts on missing due days and critical protocol/ledger failures. An outage never authorizes filling missed days retrospectively, and the original 90-day results remain locked until their registered cutoff. **First protocol observation is due only after the 2026-10-21 UTC daily candle closes on 2026-10-22 KST.**
 
 [Collection runbook, timeline and no-backfill safety](docs/PROTOCOL_COLLECTION_RUNBOOK.md).
+
+
+## Frozen public quote evidence and isolated Exaone research accounts (2026-10-20)
+
+Forward Shadow Paper now writes separate, immutable `shadow_quote_evidence` for each newly observed asset/UTC day: the validated prior completed close, fetched public Upbit last-traded ticker, observation timestamp and next session date. `GET /api/quote-quality` and the local dashboard distinguish actual **data-record integrity** from unmeasurable real execution slippage. The watchdog withholds reports on a tampered or contradictory virtual quote, and labels any legacy events without saved evidence honestly.
+
+An **actual local Exaone 3.5** training-summary Agent proposal was frozen at `protocols/2026-10-20-exaone-agent-lab.json`: BTC/ETH each proposed the first allowlisted `r5 > 0.02` factor. These 2 new virtual accounts live **only in** `state/agent_lab_shadow.db`, with no systemd timer, auto strategy promotion or real orders. The original SHA-locked 90-day BTC/ETH **six-account** experiment stays unchanged.
+
+```bash
+.venv/bin/python -m quantlab.candidate_lab status \
+  --plan protocols/2026-10-20-exaone-agent-lab.json \
+  --lab-db state/agent_lab_shadow.db
+```
+
+Qlib LightGBM stays in historical research only until a separately hashed and restart-reproducible model checkpoint and future inference bridge exist. Do **not** describe the Exaone factor signal as a deployed Qlib model or claim proven investment returns.
+
+[New public quote record fields, isolated Agent commands, Qlib gating and limitations](docs/QUOTE_EVIDENCE_AGENT_LAB.md).

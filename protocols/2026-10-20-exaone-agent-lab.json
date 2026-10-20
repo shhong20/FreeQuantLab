@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "research_lane": "isolated_local_llm_factor_only",
+  "model_id": "exaone3.5:latest",
+  "created_utc": "2026-10-20T06:55:35.925813+00:00",
+  "source": "local_model_constrained_json_training_summary_only",
+  "strategy_selection": "first_allowed_factor_no_oos_search",
+  "account_config": {
+    "fee_bps": 10,
+    "slippage_bps": 5,
+    "train_fraction": 0.6,
+    "validation_fraction": 0.2,
+    "max_drawdown": 0.25,
+    "min_test_sharpe": 0.25,
+    "min_test_orders": 3,
+    "paper_min_days": 30,
+    "paper_min_orders": 8,
+    "initial_cash": 1000000,
+    "max_position_fraction": 0.2,
+    "max_paper_daily_loss": 0.03
+  },
+  "entries": [
+    {
+      "asset": {
+        "provider": "upbit",
+        "symbol": "KRW-BTC",
+        "kind": "crypto",
+        "currency": "KRW",
+        "bars": 240
+      },
+      "spec": {
+        "label": "agent_factor_1",
+        "kind": "factor",
+        "feature": "r5",
+        "direction": "gt",
+        "threshold": 0.02
+      },
+      "track_id": "4f65bcc11c575d1c43a9a336",
+      "frozen_utc_candle": "2026-10-19",
+      "training_candle_count": 240,
+      "last_training_close": 110199000.0,
+      "lookahead_labels_used": false,
+      "proposals_evaluated_on_oos": 0
+    },
+    {
+      "asset": {
+        "provider": "upbit",
+        "symbol": "KRW-ETH",
+        "kind": "crypto",
+        "currency": "KRW",
+        "bars": 240
+      },
+      "spec": {
+        "label": "agent_factor_1",
+        "kind": "factor",
+        "feature": "r5",
+        "direction": "gt",
+        "threshold": 0.02
+      },
+      "track_id": "0097ad6d885365fd215b8fa2",
+      "frozen_utc_candle": "2026-10-19",
+      "training_candle_count": 240,
+      "last_training_close": 3238000.0,
+      "lookahead_labels_used": false,
+      "proposals_evaluated_on_oos": 0
+    }
+  ],
+  "isolation_db_basename": "agent_lab_shadow.db",
+  "automatic_runner_enabled": false,
+  "qlib_model_execution_enabled": false,
+  "broker_orders_enabled": false,
+  "eligible_for_promotion": false,
+  "agent_generated_code_executed": false,
+  "sha256": "7c243b5dfaf0cec9d410264f716dd38a10dcd785dcf9b53623db0373ccb6f727"
+}

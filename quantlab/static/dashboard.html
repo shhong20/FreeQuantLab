@@ -71,6 +71,19 @@
       <div class="section-top"><div><div class="section-eyebrow">VIRTUAL PORTFOLIOS</div><h2>전략별 독립 가상계좌</h2></div><span class="table-side-label">각 계좌 독립 운영 / 수익 합산 금지</span></div>
       <div class="table-scroller"><table><thead><tr><th>자산 / 전략</th><th>관측 상태</th><th class="align-right">가상 평가액</th><th class="align-right">관측 수익률</th><th class="align-right">최대 낙폭</th><th class="align-right">가상 주문</th><th>마지막 관측</th></tr></thead><tbody id="tracks-table"><tr><td colspan="7" class="waiting">데이터 불러오는 중...</td></tr></tbody></table></div>
     </section>
+    <section class="panel quote-evidence-panel" aria-label="가상 체결 시세 증거">
+      <div class="section-top">
+        <div><div class="section-eyebrow">PUBLIC QUOTE EVIDENCE · VIRTUAL FILLS ONLY</div><h2>가상 체결 가격 검증</h2></div>
+        <span class="badge-soft" id="quote-quality-state">시세 증거 조회 중</span>
+      </div>
+      <div class="quote-evidence-grid">
+        <div class="quote-evidence-item"><span>시세 증거가 확인된 가상 기록</span><strong id="quote-covered">—</strong></div>
+        <div class="quote-evidence-item"><span>체결가와 전일 종가 최대 차이</span><strong id="quote-gap">—</strong></div>
+        <div class="quote-evidence-item"><span>일봉 종료 후 최대 시세 조회 지연</span><strong id="quote-lag">—</strong></div>
+        <div class="quote-evidence-item"><span>가정된 누적 매매비용</span><strong id="quote-cost">—</strong></div>
+      </div>
+      <p class="chart-note" id="quote-disclaimer">공개 체결가는 실제 호가·시장충격·주문 체결 증거가 아닙니다. 실제 슬리피지는 측정할 수 없습니다.</p>
+    </section>
     <section class="bottom-grid">
       <article class="panel lower"><div class="section-top"><div><div class="section-eyebrow">ORDER JOURNAL</div><h2>최근 가상 거래 내역</h2></div></div><div class="log-scroller"><table><thead><tr><th>관측일</th><th>자산</th><th>전략</th><th>구분</th><th class="align-right">관측가</th></tr></thead><tbody id="events-table"><tr><td colspan="5" class="waiting">새로 기록된 시세가 없습니다.</td></tr></tbody></table></div></article>
       <article class="panel lower"><div class="section-top"><div><div class="section-eyebrow">SERVICE ACTIVITY</div><h2>자동 실행 이력</h2></div></div><div id="runs" class="runs"><div class="waiting">이력을 확인하고 있습니다.</div></div></article>
