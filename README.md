@@ -162,3 +162,18 @@ python -m quantlab.dashboard --db state/shadow.db --bind 127.0.0.1 --port 8788
 Open **http://localhost:8788** on the same host (with WSL localhost forwarding where applicable). It never places orders, never changes balances/strategies and cannot authorize live trading. UI/API bind to loopback only; without authentication, never expose to 0.0.0.0 or the public internet.
 
 [Deployment, systemd auto-start and anomaly-check reference](docs/MONITOR_DASHBOARD.md).
+
+
+## Automated daily reports and anomaly alerts (2026-10-20)
+
+The read-only watchdog now generates daily **forward-only observed** paper performance reports per independent BTC/ETH virtual account, detects missing daily observations, service/read failures and risk halts, and records deduplicated issue/resolution events in a separate SQLite alert inbox. **It never places broker orders or automatically promotes a strategy.**
+
+```bash
+python -m quantlab.watchdog --shadow-db state/shadow.db --state-db state/watchdog.db --report-dir reports/forward
+```
+
+Reports: `reports/forward/YYYY-MM-DD.json` and `.md`. Dashboard: local-only `http://localhost:8788` with recent daily report and alert history.
+
+A WSL user `freequant-watchdog.timer` template checks at 10:30, 12:30 and 18:30 KST, after the forward-paper runner's 09:15–10:00 checks. On real new alert transitions it may invoke the Windows PowerShell Toast API; **successful API submission does not confirm a visible desktop notification**. Alert events remain available locally even when Windows notification delivery fails.
+
+[Operations runbook and delivery limitations](docs/WATCHDOG_AND_FORWARD_REPORTS.md).

@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab forward observation daily watchdog and local alerts
+Documentation=https://github.com/shhong20/FreeQuantLab
+After=freequant-dashboard.service
+Wants=freequant-dashboard.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.watchdog --shadow-db state/shadow.db --state-db state/watchdog.db --report-dir reports/forward --windows-toast
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/forward
+StandardOutput=journal
+StandardError=journal
