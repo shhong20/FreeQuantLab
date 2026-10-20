@@ -124,3 +124,14 @@ python -m quantlab --config examples/market_research_long.json qlib-compare --sy
 - Qlib 벤치마크는 실거래뿐 아니라 자동 선행 모의거래 **승인 연결도 비활성화**되어 있습니다.
 
 자세한 재현/한계: [Qlib 및 시장자료 검증 안내](docs/QLIB_AND_MARKET_RESEARCH.md).
+
+## Strategy robustness diagnostics (2026-10-20)
+
+`agent-compare` and `qlib-compare` now report a **research-only** risk/robustness appendix:
+- Train-only removal of nearly constant or >=98%-matching Agent factors; validation and held-out prices never affect this screening.
+- Causally dated bullish/bearish/sideways and high/low-volatility regime attribution using only historical completed closes.
+- Fold-stratified 10-bar block bootstrap of daily OOS log-relative returns versus same-capital-exposure buy/hold. **Exploratory confidence ranges are not multiple-testing corrected and are NOT probabilities of future profitability.**
+- Additional C-vs-risk-matched buy/hold comparison prevents treating cash exposure reductions as free strategy alpha.
+- These results can **never** turn on automatic paper promotion or live broker execution. Strategy changes after inspecting OOS require a completely new future evaluation period.
+
+[Full methodology and limitations](docs/ROBUSTNESS_DIAGNOSTICS.md).

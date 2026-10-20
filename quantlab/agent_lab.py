@@ -22,6 +22,10 @@ import requests
 from .engine import Candidate, signals, simulate
 from .features import build_features, FEATURE_COLUMNS
 from .settings import Settings
+from .diagnostics import (
+    daily_net_returns, trailing_regimes, regime_attribution,
+    screen_redundant_factors, diagnostic_summary, paired_block_bootstrap,
+)
 
 
 class AgentError(ValueError):
@@ -271,10 +275,13 @@ def compare_agents(df: pd.DataFrame, settings: Settings, agent: LocalLLMAgent | 
                "promotion_eligible": False, "real_orders_enabled": False, "folds": [],
                "baseline_models": ["MA10-40", "MA20-80", "HGB-p0.55"] + (["LIGHTGBM-p0.55"] if with_lightgbm else []),
                "agent_protocol": "allowlisted_factor_proposer_plus_validation_only_risk_reviewer_not_rd_agent_or_tradingagents"}
+    diagnostic_folds = []
+    regime_tags = trailing_regimes(df)
     for idx, (train, val, test) in enumerate(walk_forward_windows(len(df)), start=1):
         # Agent sees only training summary, not future market candles.
-        proposals = agent.propose(_summarize_training(df, train))
+        raw_proposals = agent.propose(_summarize_training(df, train))
         factors = build_features(df)
+        proposals, screened = screen_redundant_factors(raw_proposals, factors, train)
         pool_a = _baseline_pool(df, train, with_lightgbm=with_lightgbm)
         pool_b = [(p.name, p.compute(factors)) for p in proposals]
         a_name, _, a_val = _best_on_validation(pool_a, df, train, val, settings, annual_periods)
@@ -304,10 +311,44 @@ def compare_agents(df: pd.DataFrame, settings: Settings, agent: LocalLLMAgent | 
             result["test_stress_2x_cost"] = _simulate_scale(
                 df, label_sig, val, test, stress_settings, annual_periods,
                 float(result.get("exposure_scale", 1)))
+        # Diagnostics use only post-selection test signals and causal trailing
+        # market labels. OOS evidence is NEVER returned to either LLM agent.
+        paths = {}
+        regime_breakdown = {}
+        for label in results:
+            raw_signal = (a_test_sig if label == "A_baseline" else
+                          np.ones(len(df)) if label == "buy_hold_same_exposure"
+                          else b_test_sig)
+            used_scale = float(results[label].get("exposure_scale", 1))
+            path = daily_net_returns(
+                df, raw_signal, val, test, settings, scale=used_scale,
+            )
+            expected = float(results[label]["test"]["total_return"])
+            if not np.isclose(float(np.prod(1 + path) - 1), expected, rtol=1e-9, atol=1e-10):
+                raise AgentError("Diagnostic PnL must match the existing backtest")
+            paths[label] = path
+            regime_breakdown[label] = regime_attribution(
+                df, path, val, test, regimes=regime_tags
+            )
+        risk_matched_path = daily_net_returns(
+            df, np.ones(len(df)), val, test, settings, scale=scale
+        )
+        paths["buy_hold_riskmatched_C"] = risk_matched_path
+        regime_breakdown["buy_hold_riskmatched_C"] = regime_attribution(
+            df, risk_matched_path, val, test, regimes=regime_tags
+        )
+        diagnostic_folds.append(paths)
         summary["folds"].append({"fold": idx, "dates": {"train_end_exclusive": str(df.iloc[train]["date"].date()),
                                "validation_end_exclusive": str(df.iloc[val]["date"].date()),
                                "test_end_exclusive": str(df.iloc[min(test, len(df)-1)]["date"].date())},
-                                 "proposals": [asdict(p) for p in proposals], "results": results})
+                                 "proposals": [asdict(p) for p in proposals],
+                                 "factor_screening": screened,
+                                 "regime_attribution": regime_breakdown,
+                                 "risk_matched_C_buy_hold": {
+                                     "matched_scale": float(scale),
+                                     "total_return": float(np.prod(1 + risk_matched_path) - 1),
+                                 },
+                                 "results": results})
     # Post-hoc analysis only; NEVER promote winning group on test results.
     for label in ("A_baseline", "B_agent", "C_agent_review", "buy_hold_same_exposure"):
         rows = [fold["results"][label]["test"] for fold in summary["folds"]]
@@ -320,5 +361,15 @@ def compare_agents(df: pd.DataFrame, settings: Settings, agent: LocalLLMAgent | 
                 1 + f["results"][label]["test_stress_2x_cost"]["total_return"]
                 for f in summary["folds"]]) - 1),
         }
+    summary["diagnostics"] = diagnostic_summary(diagnostic_folds)
+    summary["diagnostics"]["C_vs_riskmatched_buy_hold"] = paired_block_bootstrap(
+        [f["C_agent_review"] for f in diagnostic_folds],
+        [f["buy_hold_riskmatched_C"] for f in diagnostic_folds],
+    )
+    summary["diagnostics"]["warnings"] = [
+        "All OOS comparisons are exploratory and uncorrected for strategy search.",
+        "C reduces exposure; inspect the risk-matched buy-hold comparison.",
+        "A positive bootstrap fraction is NOT an investment win probability.",
+    ]
     summary["dataset_fingerprint"] = hashlib.sha256(pd.util.hash_pandas_object(df, index=True).values.tobytes()).hexdigest()[:16]
     return summary
