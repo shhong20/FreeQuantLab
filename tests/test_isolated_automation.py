@@ -219,3 +219,72 @@ def test_last_cycle_error_alerts_without_fabricating_new_trades(policy):
     assert s["status"]=="WARNING"
     assert any(a["code"]=="ISOLATED_LAST_CYCLE_ERROR" and a["strategy"]=="qlib"
                for a in s["alerts"])
+
+
+def test_late_wsl_restart_never_creates_virtual_orders(policy, monkeypatch):
+    """Persistent=true systemd catch-up at noon cannot execute 09:xx trades."""
+    path, body, _ = policy
+    from quantlab import isolated_scheduler as sched
+    monkeypatch.setattr(sched, "verify_lane",
+                        lambda p,n,*,now: {"sha256":body["lanes"][n]["plan_sha256"]})
+    def refuse(*args,**kwargs):
+        pytest.fail("A delayed persistent-timer activation must not fetch quote or trade")
+    for moment in (
+        datetime(2026,10,21,0,9,59,tzinfo=timezone.utc),
+        datetime(2026,10,21,1,20,tzinfo=timezone.utc),
+        datetime(2026,10,21,3,45,tzinfo=timezone.utc),
+        datetime(2026,10,22,12,0,tzinfo=timezone.utc),
+    ):
+        assert eligible_decision(body,moment) is None
+        for lane in ("exaone","qlib"):
+            result=run_scheduled(lane,policy_path=path,now=moment,
+                                 agent_runner=refuse,qlib_runner=refuse)
+            assert result["status"]=="OUTSIDE_AUTHORIZED_UTC_WINDOW"
+            assert result["virtual_events"]==0
+    for hour,minute in ((0,10),(0,18),(0,31),(1,5),(1,19)):
+        moment=datetime(2026,10,21,hour,minute,tzinfo=timezone.utc)
+        assert eligible_decision(body,moment)==date(2026,10,20)
+
+
+def test_broken_policy_triggers_persistent_critical_warning_and_recovers(policy):
+    path,body,tmp=policy
+    before=path.read_bytes()
+    broken=json.loads(path.read_text())
+    broken["allow_live_broker_orders"]=True
+    path.write_text(json.dumps(broken))
+    state=tmp/"isolated-watchdog.db"
+    reports=tmp/"reports"
+    result=check_isolated(policy_path=path,state_db=state,report_dir=reports,
+                          now=EARLY-timedelta(minutes=18))
+    assert result["status"]=="DEGRADED"
+    assert result["active_alerts"]==1
+    assert any(t["code"]=="ISOLATED_AUTOMATION_POLICY_INVALID"
+               for t in result["alert_transitions"])
+    report=json.loads((reports/"2026-10-21.json").read_text())
+    assert report["status"]=="DEGRADED"
+    assert report["automation_policy_sha256"] is None
+    assert report["real_orders_enabled"] is False
+    assert report["coverage"]==[]
+    duplicate=check_isolated(policy_path=path,state_db=state,
+                             report_dir=reports,now=EARLY-timedelta(minutes=17))
+    assert duplicate["alert_transitions"]==[]
+    path.write_bytes(before)
+    good=check_isolated(policy_path=path,state_db=state,report_dir=reports,
+                        now=EARLY-timedelta(minutes=16),
+                        verify_func=lambda *args,**kwargs:None)
+    assert good["status"]=="WAITING_FIRST_DUE"
+    assert good["active_alerts"]==0
+    assert any(t["code"]=="ISOLATED_AUTOMATION_POLICY_INVALID"
+               for t in good["alert_transitions"])
+    assert (tmp/"isolated-watchdog-history.json").exists()
+
+
+def test_missing_authorization_still_persists_critical_alert(policy):
+    path,_,tmp=policy
+    path.unlink()
+    result=check_isolated(policy_path=path,
+                          state_db=tmp/"isolated-watchdog.db",
+                          report_dir=tmp/"reports",now=EARLY)
+    assert result["status"]=="DEGRADED"
+    assert len(result["alert_transitions"])==1
+    assert result["alert_transitions"][0]["code"]=="ISOLATED_AUTOMATION_POLICY_INVALID"

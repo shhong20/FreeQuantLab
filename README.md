@@ -298,3 +298,12 @@ The **original three strategies per BTC/ETH asset** now record one immutable pub
 A real SQLite fault-injection test aborts the **second of three BTC strategies** and verifies first BTC event and quote were rolled back, unaffected ETH saved, and subsequent BTC-only retry succeeds; a second test fails on the first strategy. Qlib's independently atomic model decisions/inputs/quotes remain tested.
 
 [Regression evidence, observed WSL clock/timers, and first-real-bar runbook](docs/SHADOW_ATOMIC_FIRST_DAY_READINESS.md).
+
+
+## WSL delayed-timer / tampered-plan / stale-dashboard safeguards (2026-10-20)
+
+Isolated Exaone/Qlib virtual-paper timers now allow observations only **09:10–10:19 KST** after the public UTC-daily candle close, with their previously configured fixed attempts unchanged. If Windows/WSL resumes after 10:20 KST and systemd `Persistent=true` fires late, the scheduler refuses to create a stale-price hypothetical order or backfill a missed session.
+
+The independent frozen-lab watchdog now **persists a critical alert** when its SHA-256-locked operational authorization is missing or tampered with, instead of crashing silently without writing an alert record. The read-only dashboard rejects an independent-watchdog snapshot older than **18 hours** or >5 minutes in the future, displaying a stale monitoring warning rather than an inaccurate healthy state.
+
+[WSL recovery, immutable authorization alert and stale report runbook](docs/WSL_TIMER_RECOVERY_AND_STALE_REPORT.md).

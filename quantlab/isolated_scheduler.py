@@ -112,7 +112,13 @@ def eligible_decision(policy: dict, now: datetime) -> date | None:
     """Only yesterday's fully closed UTC candle; never fill older missing days."""
     first = date.fromisoformat(policy["first_decision_utc"])
     last = date.fromisoformat(policy["last_decision_utc"])
-    day = now.date() - timedelta(days=1)
+    # This is a scheduled *opening-price proxy*, not an arbitrary late fill.
+    # systemd Persistent=true can fire hours late after WSL restarts; never
+    # record a stale ticker as if observed near the 09:00 KST daily close.
+    utc = now.astimezone(timezone.utc)
+    if not ((0, 10) <= (utc.hour, utc.minute) < (1, 20)):
+        return None
+    day = utc.date() - timedelta(days=1)
     return day if first <= day <= last else None
 
 
