@@ -148,7 +148,15 @@ class LocalLLMAgent:
         factors = response["factors"]
         if not isinstance(factors, list) or not 1 <= len(factors) <= 5:
             raise AgentError("Must return 1-5 proposed factors")
-        parsed = [FactorProposal.parse(v) for v in factors]
+        # Model-written names are display labels only and may be verbose,
+        # Unicode or otherwise malformed. Ignore them entirely: assign
+        # canonical, bounded identifiers while retaining strict validation
+        # for every actual tradable feature, comparison and threshold.
+        parsed = []
+        for i, item in enumerate(factors, start=1):
+            if not isinstance(item, dict):
+                raise AgentError("Invalid factor item")
+            parsed.append(FactorProposal.parse({**item, "name": f"factor_{i}"}))
         if len({(v.feature, v.direction, v.threshold) for v in parsed}) != len(parsed) or len({v.name for v in parsed}) != len(parsed):
             raise AgentError("Duplicate factors")
         return parsed
