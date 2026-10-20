@@ -121,6 +121,41 @@ def test_exaone_single_nested_wrapper_accepts_only_allowlisted_fields(monkeypatc
         agent.propose({"bar_count": 500})
 
 
+def test_ollama_json_schema_is_role_specific_and_strict(monkeypatch):
+    agent = LocalLLMAgent("http://127.0.0.1:11434/v1", "exaone3.5:latest")
+    observed = []
+
+    class Resp:
+        status_code = 200
+        def raise_for_status(self):
+            return None
+        def json(self):
+            if len(observed) == 1:
+                content = '{"factors":[{"name":"safe","feature":"r5","direction":"gt","threshold":0}]}'
+            else:
+                content = '{"exposure_scale":0.5,"reason":"risk"}'
+            return {"choices": [{"message": {"content": content}}]}
+
+    class Session:
+        trust_env = True
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def post(self, url, **kwargs):
+            fmt = kwargs["json"]["response_format"]
+            assert fmt["type"] == "json_schema"
+            assert fmt["json_schema"]["strict"] is True
+            assert fmt["json_schema"]["schema"]["additionalProperties"] is False
+            observed.append(fmt["json_schema"]["name"])
+            return Resp()
+
+    monkeypatch.setattr("requests.Session", Session)
+    assert len(agent.propose({"bar_count": 500})) == 1
+    assert agent.review({"validation": {"sharpe": 0.2}}) == 0.5
+    assert observed == ["alpha_proposer", "risk_reviewer"]
+
+
 def test_walk_forward_is_chronological_with_disjoint_test_periods():
     folds = walk_forward_windows(1000)
     assert len(folds) == 4
