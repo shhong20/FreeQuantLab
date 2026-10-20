@@ -227,10 +227,20 @@ async function updateProspectiveProtocol(){
       ? kst(data.evaluation_not_before_utc)+" 이후":"평가 대기";
     $("protocol-caution").textContent="해시 "+(data.protocol_sha256||"").slice(0,12)+
       " · 공개 대시보드가 있어 완전한 블라인드 검증은 아닙니다.";
+    const coverageRes=await fetch("/api/protocol-collection",{cache:"no-store"});
+    if(!coverageRes.ok)throw new Error("Coverage unavailable");
+    const coverage=await coverageRes.json();
+    const missed=coverage.accounts?.reduce((sum,account)=>sum+account.missing_due_days,0) ?? 0;
+    const observed=coverage.accounts?.reduce((sum,account)=>sum+account.observed_due_days,0) ?? 0;
+    $("protocol-coverage").textContent="프로토콜 수집 상태: "+coverage.status+
+      " · 확인된 기한 내 기록 "+observed+"건 · 누락 "+missed+"건";
+    if(["BREACH_OR_MISSING","INVALID_PROTOCOL_IDENTITY","INVALID_LEDGER"].includes(coverage.status))
+      $("protocol-state").textContent="수집 이상 · 검토 필요";
   }catch(error){
     $("protocol-state").textContent="조회 불가";
     $("protocol-detail").textContent="평가 원장/사전 등록 계획을 확인할 수 없습니다.";
     $("protocol-end").textContent="—";
+    $("protocol-coverage").textContent="수집 상태 조회 실패";
   }
 }
 async function reload(){

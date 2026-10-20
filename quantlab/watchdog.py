@@ -249,6 +249,7 @@ def check(
     report_dir: str | Path, now: datetime | None = None,
     windows_notifications: bool = False,
     health_check: Callable[[],bool] | None = None,
+    protocol_path: str | Path | None = None,
 ) -> dict:
     instant = now or datetime.now(timezone.utc)
     if instant.tzinfo is None:
@@ -256,6 +257,28 @@ def check(
     alerts = []
     daily_paths = None
     state = "OK"
+    compliance = None
+    if protocol_path is not None:
+        try:
+            from .protocol_compliance import assess_collection
+            compliance = assess_collection(shadow_db, protocol_path, now=instant)
+            if compliance["status"] in ("INVALID_LEDGER", "INVALID_PROTOCOL_IDENTITY"):
+                state = "DEGRADED"
+                alerts.append(_synthetic_alert(
+                    "PROTOCOL_IDENTITY_OR_LEDGER_FAILED",
+                    "Forward protocol account identity or ledger verification failed."))
+            elif compliance["status"] == "BREACH_OR_MISSING":
+                alerts.append({
+                    "severity": "warning",
+                    "code": "PROTOCOL_DUE_OBSERVATIONS_MISSING",
+                    "message": "Due forward UTC observations missing or inconsistent. No backfill is allowed.",
+                })
+        except (ValueError, RuntimeError, OSError, sqlite3.Error, KeyError) as exc:
+            state = "DEGRADED"
+            compliance = {"status":"UNAVAILABLE", "real_orders_enabled":False}
+            alerts.append(_synthetic_alert(
+                "PROTOCOL_CHECK_FAILED",
+                "Unable to verify the locked forward research protocol."))
     try:
         snap = snapshot(shadow_db, now=instant)
         alerts.extend(snap["alerts"])
@@ -278,7 +301,7 @@ def check(
                 "Read-only replay found mismatched virtual accounting. Manual investigation required.",
             ))
             # No nominal daily performance report on compromised accounting.
-        else:
+        elif state != "DEGRADED":
             report_data = build_report(shadow_db, now=instant)
             report_data["ledger_integrity"] = {
                 "status": "PASS", "accounts": ledger_evidence["accounts"],
@@ -287,6 +310,8 @@ def check(
             report_data["manual_review"] = evaluate_manual_review(
                 report_data, ledger_evidence
             )
+            if compliance is not None:
+                report_data["protocol_collection_compliance"] = compliance
             daily_paths = save_report(report_data, report_dir)
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
         state = "DEGRADED"
@@ -306,7 +331,7 @@ def check(
             })
     transitions = persist_alert_transitions(state_db, alerts, now=instant)
     delivery = deliver_pending(state_db, toast=windows_notifications, now=instant)
-    inbox_file = export_alert_history(state_db, Path(state_db).with_name("watchdog-history.json"), now=instant)
+    inbox_file = export_alert_history(state_db, Path(state_db).with_name(Path(state_db).stem + "-history.json"), now=instant)
     return {
         "status":state,
         "checked_at_utc":instant.astimezone(timezone.utc).isoformat(),
@@ -315,6 +340,7 @@ def check(
         "windows_delivery":delivery,
         "reports":[str(p) for p in daily_paths] if daily_paths else [],
         "inbox_snapshot":str(inbox_file),
+        "protocol_compliance":compliance,
         "real_orders_enabled":False,
     }
 
@@ -331,12 +357,14 @@ def main(argv=None):
     parser.add_argument("--report-dir",default="reports/forward")
     parser.add_argument("--windows-toast",action="store_true")
     parser.add_argument("--skip-dashboard-health",action="store_true")
+    parser.add_argument("--protocol",help="Frozen prospective manifest for read-only due-date checks")
     args=parser.parse_args(argv)
     try:
         result=check(
             shadow_db=args.shadow_db,state_db=args.state_db,
             report_dir=args.report_dir,windows_notifications=args.windows_toast,
             health_check=None if args.skip_dashboard_health else dashboard_health,
+            protocol_path=args.protocol,
         )
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 0 if result["status"]=="OK" and result["windows_delivery"]["delivery_failed"]==0 else 2

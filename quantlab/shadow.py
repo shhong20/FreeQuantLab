@@ -296,6 +296,7 @@ def _exclusive_lock(db: str | Path):
 def run_cycle(
     db: str | Path, assets: list[dict], *, now: datetime | None = None,
     fetch_fn: Callable = fetch, quote_fn: Callable = live_paper_quote,
+    protocol_path: str | Path | None = None,
 ) -> dict:
     current = _utc(now)
     results, errors = [], []
@@ -303,6 +304,9 @@ def run_cycle(
         frozen = con.execute("SELECT * FROM shadow_accounts ORDER BY symbol,label").fetchall()
         if not frozen:
             raise ValueError("No frozen tracks; shadow-bootstrap first")
+        if protocol_path is not None:
+            from .protocol_compliance import verify_frozen_accounts
+            verify_frozen_accounts(frozen, protocol_path, now=current)
         configured = {(a["provider"], a["symbol"]): a for a in assets}
         by_symbol: dict[tuple[str,str], list] = {}
         for row in frozen:
