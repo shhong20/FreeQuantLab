@@ -1,0 +1,45 @@
+{
+  "notice": "SYNTHETIC ONLY + MOCK AGENT - these returns cannot be used to infer live profitability",
+  "provider": "demo",
+  "symbol": "SYNTHETIC-ONLY",
+  "agent_mode": "mock_not_real_ai",
+  "is_synthetic": true,
+  "promotion_eligible": false,
+  "real_orders_enabled": false,
+  "baseline_models": [
+    "MA10-40",
+    "MA20-80",
+    "HGB-p0.55",
+    "LIGHTGBM-p0.55"
+  ],
+  "out_of_sample_summary": {
+    "A_baseline": {
+      "compounded_return_across_four_nonoverlapping_test_windows": 0.1760598045386843,
+      "mean_fold_sharpe": 3.2367129667707584,
+      "worst_fold_max_drawdown": -0.031136279021520274,
+      "total_orders": 8,
+      "compounded_return_2x_cost": 0.17323937766119824
+    },
+    "B_agent": {
+      "compounded_return_across_four_nonoverlapping_test_windows": 0.2377763638892052,
+      "mean_fold_sharpe": 4.05053278650219,
+      "worst_fold_max_drawdown": -0.025080887650995476,
+      "total_orders": 44,
+      "compounded_return_2x_cost": 0.22153781870603795
+    },
+    "C_agent_review": {
+      "compounded_return_across_four_nonoverlapping_test_windows": 0.2200347043708486,
+      "mean_fold_sharpe": 4.050543507903795,
+      "worst_fold_max_drawdown": -0.019433219008899494,
+      "total_orders": 44,
+      "compounded_return_2x_cost": 0.20619958434348584
+    },
+    "buy_hold_same_exposure": {
+      "compounded_return_across_four_nonoverlapping_test_windows": 0.17013298628279538,
+      "mean_fold_sharpe": 2.399796401569934,
+      "worst_fold_max_drawdown": -0.06138817011638498,
+      "total_orders": 8,
+      "compounded_return_2x_cost": 0.1673267731021324
+    }
+  }
+}
