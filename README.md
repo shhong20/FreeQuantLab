@@ -135,3 +135,18 @@ python -m quantlab --config examples/market_research_long.json qlib-compare --sy
 - These results can **never** turn on automatic paper promotion or live broker execution. Strategy changes after inspecting OOS require a completely new future evaluation period.
 
 [Full methodology and limitations](docs/ROBUSTNESS_DIAGNOSTICS.md).
+
+
+## Automated forward-only Shadow Paper incubation (2026-10-20)
+
+**Research-only tracking, no live broker order APIs.** BTC and ETH can be observed across three immutable virtual strategies each. Every strategy starts from an independent imaginary KRW account: 20% max exposure and a persistent virtual daily-loss stop. Previously completed history is **never backfilled as if traded**; first execution requires a newly closed Upbit UTC session after registration. Enabling the timer does not activate trading with real money.
+
+```bash
+python -m quantlab --config examples/shadow_crypto.json --db state/shadow.db shadow-bootstrap
+python -m quantlab --config examples/shadow_crypto.json --db state/shadow.db shadow-cycle
+python -m quantlab --db state/shadow.db shadow-status
+```
+
+The systemd **user** timer in `deploy/systemd/` checks at 09:15/09:25/09:35/10:00 **Asia/Seoul** to allow retries after transient public-data failures. Idempotent SQLite events plus OS file locking prevent duplicate virtual fills. This module is kept separate from the legacy `paper.db` and from Qlib/Agent automatic promotion.
+
+[Setup, monitoring, safety and limitations](docs/FORWARD_SHADOW_PAPER.md).
