@@ -274,3 +274,18 @@ The new local-only `GET /api/research-lanes` (also available in the dashboard) c
 ```
 
 [Read-only replay, atomic rollback, common-day criteria and safety](docs/QLIB_DECISION_REPLAY_AND_CROSSLANE.md).
+
+
+## Independent, explicitly authorized Exaone + Qlib automatic paper schedule (2026-10-20)
+
+The user subsequently authorized scheduled forward observations for the **two already frozen Exaone factors** and **two actual Qlib model checkpoints**. Their original manual-only model/strategy manifests remain unchanged. A *new and separate* SHA-256-sealed operational authorization, `ops/isolated_paper_scheduler.json`, pins their exact original strategy hashes and permits **automated virtual market observations only** within a strict UTC window (2026-10-20..2027-01-18). No real broker orders, model selection/retraining, strategy promotion or synthetic backfill.
+
+Three new WSL user-systemd timers (existing original 90-day two timers untouched):
+
+- Exaone factor paper: 09:18/09:28/09:38/10:05 KST daily.
+- Qlib frozen model paper: 09:21/09:31/09:41/10:08 KST daily.
+- Independent Exaone+Qlib ledger/model/UTC due-date watchdog: 10:35/12:35/18:35 KST, with its own alert DB and report directory.
+
+Daily missing-data warnings begin only **after 10:20 KST** on the next Korean day. Recovery never manufactures earlier missed virtual orders. The loopback read-only dashboard exposes `/api/isolated-status` and `/api/isolated-alerts`, with no unlocked 90-day return scores. The first possible isolated-paper decision is UTC 2026-10-20, observed no sooner than 2026-10-21 09:00 KST; the original six-account **90-day scoring window still starts UTC 2026-10-21**.
+
+[Schedule setup, timer permissions, immutable policies and recovery](docs/ISOLATED_AUTOMATION_RUNBOOK.md).

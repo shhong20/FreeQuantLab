@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab frozen Exaone virtual-only auto observation
+Documentation=https://github.com/shhong20/FreeQuantLab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.isolated_scheduler exaone --policy ops/isolated_paper_scheduler.json
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state
+StandardOutput=journal
+StandardError=journal

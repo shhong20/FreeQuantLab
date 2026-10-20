@@ -29,7 +29,9 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                  agent_db: str | Path = "state/agent_lab_shadow.db",
                  qlib_db: str | Path = "state/qlib_lab_shadow.db",
                  agent_plan: str | Path = "protocols/2026-10-20-exaone-agent-lab.json",
-                 qlib_plan: str | Path = "protocols/2026-10-20-qlib-lab.json"):
+                 qlib_plan: str | Path = "protocols/2026-10-20-qlib-lab.json",
+                 isolated_reports: str | Path = "reports/isolated",
+                 isolated_alerts: str | Path = "state/isolated-watchdog-history.json"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
     daily_dir = Path(reports_dir).resolve()
@@ -39,6 +41,8 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
     qlib_source = Path(qlib_db).resolve()
     agent_plan_source = Path(agent_plan).resolve()
     qlib_plan_source = Path(qlib_plan).resolve()
+    isolated_reports_dir = Path(isolated_reports).resolve()
+    isolated_alert_store = Path(isolated_alerts).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -82,6 +86,33 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                             "application/json; charset=utf-8")
                 return
             path = urlsplit(self.path).path
+            if path == "/api/isolated-status":
+                try:
+                    found = sorted(isolated_reports_dir.glob("????-??-??.json"))
+                    if not found:
+                        self._reply(404, {"status": "not_ready"},
+                                    "application/json; charset=utf-8")
+                    else:
+                        report = json.loads(found[-1].read_text(encoding="utf-8"))
+                        if not isinstance(report, dict) or report.get("real_orders_enabled") is not False:
+                            raise ValueError("Invalid isolated paper watchdog report")
+                        self._reply(200, report, "application/json; charset=utf-8")
+                except (OSError, ValueError):
+                    self._reply(503, {"status": "unavailable"}, "application/json; charset=utf-8")
+                return
+            if path == "/api/isolated-alerts":
+                try:
+                    if not isolated_alert_store.is_file():
+                        self._reply(200, {"events": []}, "application/json; charset=utf-8")
+                    else:
+                        events = json.loads(isolated_alert_store.read_text(encoding="utf-8"))
+                        if not isinstance(events, dict) or not isinstance(events.get("events"), list):
+                            raise ValueError("Malformed isolated alert snapshot")
+                        self._reply(200, {"events": events["events"][:30]},
+                                    "application/json; charset=utf-8")
+                except (OSError, ValueError):
+                    self._reply(503, {"status": "unavailable"}, "application/json; charset=utf-8")
+                return
             if path == "/api/research-lanes":
                 try:
                     from .lane_comparison import compare_three_lanes
