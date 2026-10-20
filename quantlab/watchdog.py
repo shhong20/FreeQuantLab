@@ -17,7 +17,7 @@ import sys
 from typing import Callable
 from urllib.request import urlopen
 
-from .forward_reports import report as build_report, save_report
+from .forward_reports import report as build_report, save_report, _atomic
 from .monitor import snapshot
 
 WINDOWS_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -217,6 +217,32 @@ def deliver_pending(
             "delivery_note":"Submitted does not prove a desktop notification was displayed"}
 
 
+def export_alert_history(
+    state_db: str | Path, target_file: str | Path,
+    *, now: datetime | None = None,
+) -> Path:
+    """Publish one atomic JSON inbox snapshot; dashboard never opens WAL db."""
+    instant = now or datetime.now(timezone.utc)
+    if instant.tzinfo is None:
+        raise ValueError("Aware timestamp required")
+    with _open_state(state_db) as con:
+        rows = con.execute(
+            "SELECT event_time,event_kind,severity,code,message,delivery_status "
+            "FROM notification_events ORDER BY id DESC LIMIT 100"
+        ).fetchall()
+    payload = {
+        "generated_at_utc":instant.astimezone(timezone.utc).isoformat(),
+        "events":[{
+            "time":r[0],"kind":r[1],"severity":r[2],
+            "code":r[3],"message":r[4],"delivery":r[5],
+        } for r in rows],
+        "read_only":True,
+    }
+    target = Path(target_file)
+    _atomic(target,(json.dumps(payload,ensure_ascii=False,allow_nan=False,indent=2)+"\n").encode("utf-8"))
+    return target
+
+
 def check(
     *, shadow_db: str | Path, state_db: str | Path,
     report_dir: str | Path, now: datetime | None = None,
@@ -252,6 +278,7 @@ def check(
             })
     transitions = persist_alert_transitions(state_db, alerts, now=instant)
     delivery = deliver_pending(state_db, toast=windows_notifications, now=instant)
+    inbox_file = export_alert_history(state_db, Path(state_db).with_name("watchdog-history.json"), now=instant)
     return {
         "status":state,
         "checked_at_utc":instant.astimezone(timezone.utc).isoformat(),
@@ -259,6 +286,7 @@ def check(
         "alert_transitions":transitions["transitions"],
         "windows_delivery":delivery,
         "reports":[str(p) for p in daily_paths] if daily_paths else [],
+        "inbox_snapshot":str(inbox_file),
         "real_orders_enabled":False,
     }
 

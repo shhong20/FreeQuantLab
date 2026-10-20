@@ -192,7 +192,7 @@ def test_server_static_has_no_external_deps_or_untrusted_innerhtml():
 def test_report_and_alert_inbox_are_readonly_http_endpoints(tmp_path):
     from http.server import ThreadingHTTPServer
     from quantlab.forward_reports import report, save_report
-    from quantlab.watchdog import persist_alert_transitions
+    from quantlab.watchdog import persist_alert_transitions, export_alert_history
     from datetime import datetime, timezone
     import sqlite3
 
@@ -206,9 +206,11 @@ def test_report_and_alert_inbox_are_readonly_http_endpoints(tmp_path):
                  "message":"test inbox","symbol":"KRW-BTC"}],
         now=datetime(2026,10,20,3,tzinfo=timezone.utc),
     )
+    export_alert_history(state,tmp_path/"watchdog-history.json",
+                         now=datetime(2026,10,20,3,tzinfo=timezone.utc))
     httpd=ThreadingHTTPServer(
         ("127.0.0.1",0),
-        make_handler(path,reports_dir=report_dir,alerts_db=state),
+        make_handler(path,reports_dir=report_dir,alerts_file=tmp_path/"watchdog-history.json"),
     )
     thread=threading.Thread(target=httpd.serve_forever,daemon=True)
     thread.start()
@@ -235,7 +237,7 @@ def test_missing_report_and_missing_inbox_are_safe(tmp_path):
     path=database(tmp_path)
     httpd=ThreadingHTTPServer(
         ("127.0.0.1",0),
-        make_handler(path,reports_dir=tmp_path/"empty",alerts_db=tmp_path/"no.db")
+        make_handler(path,reports_dir=tmp_path/"empty",alerts_file=tmp_path/"no.json")
     )
     thread=threading.Thread(target=httpd.serve_forever,daemon=True)
     thread.start()
@@ -246,6 +248,6 @@ def test_missing_report_and_missing_inbox_are_safe(tmp_path):
         assert e.value.code==404
         with urlopen(base+"/api/alert-history",timeout=4) as response:
             assert json.load(response)=={"events":[]}
-        assert not (tmp_path/"no.db").exists()
+        assert not (tmp_path/"no.json").exists()
     finally:
         httpd.shutdown();thread.join(timeout=3);httpd.server_close()
