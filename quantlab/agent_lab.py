@@ -92,7 +92,7 @@ class LocalLLMAgent:
             # Markdown block. Unwrap only a WHOLE response, never extract a
             # JSON-looking substring from prose or evaluate any model code.
             import re as _re
-            fenced = _re.fullmatch(r"```(?:json)?[ \\t]*\\n([\\s\\S]*?)\\n```", body, flags=_re.IGNORECASE)
+            fenced = _re.fullmatch(r"```(?:json)?[ \t]*\n([\s\S]*?)\n```", body, flags=_re.IGNORECASE)
             if fenced:
                 body = fenced.group(1).strip()
             obj = json.loads(body)
