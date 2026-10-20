@@ -226,7 +226,8 @@ def _apply(
         raise ValueError("Only next UTC session can receive a forward virtual fill")
     if decision_date <= account["frozen_bar"]:
         return {"status": "WAIT_NEW_BAR", "track_id": account["track_id"]}
-    con.execute("BEGIN IMMEDIATE")
+    if not con.in_transaction:
+        con.execute("BEGIN IMMEDIATE")
     old = con.execute(
         "SELECT * FROM shadow_accounts WHERE track_id=?", (account["track_id"],)
     ).fetchone()
@@ -358,17 +359,18 @@ def run_cycle(
                 if session != current.date().isoformat():
                     raise ValueError("Quote does not belong to current UTC session")
                 validate_public_quote(quality["last_completed_close"], price)
-                # One quote evidence row is shared by all virtual tracks for
-                # this asset/day. It is observational evidence only: NOT an
-                # executable ask/bid, exchange acknowledgement or real fill.
+                # Atomic asset/day batch: one immutable public quote and
+                # every ready virtual track either commit together or all
+                # roll back. This avoids orphaned evidence or half-filled
+                # baseline strategy sets after transient SQLite/model errors.
+                staged = []
                 with con:
-                    existing_evidence = con.execute(
+                    if con.execute(
                         "SELECT 1 FROM shadow_quote_evidence "
                         "WHERE symbol=? AND decision_date=?", (key[1],day),
-                    ).fetchone()
-                    if existing_evidence is not None:
-                        raise ValueError("Quote evidence already frozen for asset/day; "
-                                         "partial or failed cycle requires manual review")
+                    ).fetchone():
+                        raise ValueError("Previously frozen quote evidence exists; "
+                                         "partial legacy cycle needs manual review")
                     con.execute(
                         "INSERT INTO shadow_quote_evidence "
                         "(symbol,decision_date,session_date,prior_completed_close,"
@@ -377,31 +379,29 @@ def run_cycle(
                         (key[1],day,session,float(quality["last_completed_close"]),
                          float(price),current.isoformat(),"upbit_public_ticker"),
                     )
-                for row in ready:
-                    try:
+                    for row in ready:
                         target = _target(data, json.loads(row["spec_json"]))
-                        with con:
-                            outcome = _apply(
-                                con, row, decision_date=day,
-                                session_date=session, price=price, target=target,
-                                now=current,
-                            )
-                        if outcome["status"] == "RECORDED":
-                            last_recorded = con.execute(
-                                "SELECT decision_date FROM shadow_events "
-                                "WHERE track_id=? AND decision_date<? "
-                                "ORDER BY decision_date DESC LIMIT 1",
-                                (row["track_id"], day),
-                            ).fetchone()
-                            anchor = (last_recorded["decision_date"]
-                                      if last_recorded else row["frozen_bar"])
-                            missed = max(0, (date.fromisoformat(day) -
-                                             date.fromisoformat(anchor)).days - 1)
-                            outcome["unobserved_utc_days"] = missed
-                        results.append(outcome)
-                    except Exception as exc:
-                        errors.append({"asset": key[1], "strategy": row["label"],
-                                       "error": f"{type(exc).__name__}: {str(exc)[:240]}"})
+                        outcome = _apply(
+                            con, row, decision_date=day,
+                            session_date=session, price=price, target=target,
+                            now=current,
+                        )
+                        if outcome["status"] != "RECORDED":
+                            raise RuntimeError("Atomic asset/day virtual event was not recorded")
+                        last_recorded = con.execute(
+                            "SELECT decision_date FROM shadow_events "
+                            "WHERE track_id=? AND decision_date<? "
+                            "ORDER BY decision_date DESC LIMIT 1",
+                            (row["track_id"], day),
+                        ).fetchone()
+                        anchor = (last_recorded["decision_date"]
+                                  if last_recorded else row["frozen_bar"])
+                        outcome["unobserved_utc_days"] = max(
+                            0,(date.fromisoformat(day)-
+                               date.fromisoformat(anchor)).days-1,
+                        )
+                        staged.append(outcome)
+                results.extend(staged)
             except Exception as exc:
                 errors.append({"asset": key[1], "error": f"{type(exc).__name__}: {str(exc)[:240]}"})
         summary = {

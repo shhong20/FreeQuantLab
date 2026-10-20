@@ -289,3 +289,12 @@ Three new WSL user-systemd timers (existing original 90-day two timers untouched
 Daily missing-data warnings begin only **after 10:20 KST** on the next Korean day. Recovery never manufactures earlier missed virtual orders. The loopback read-only dashboard exposes `/api/isolated-status` and `/api/isolated-alerts`, with no unlocked 90-day return scores. The first possible isolated-paper decision is UTC 2026-10-20, observed no sooner than 2026-10-21 09:00 KST; the original six-account **90-day scoring window still starts UTC 2026-10-21**.
 
 [Schedule setup, timer permissions, immutable policies and recovery](docs/ISOLATED_AUTOMATION_RUNBOOK.md).
+
+
+## Atomic baseline virtual fills: first-day safety fix (2026-10-20)
+
+The **original three strategies per BTC/ETH asset** now record one immutable public Upbit ticker and every ready strategy's virtual cash/units/event inside **one asset/day SQLite transaction**, not separately committed quote and partial strategy rows. If any strategy calculation or DB insert fails, that asset's entire batch rolls back; other assets remain independent. Retry can later record the failed asset's same genuinely new closed UTC day without duplicate/missing immutable quote evidence. No historical backfill or automatic repair of legacy partial events.
+
+A real SQLite fault-injection test aborts the **second of three BTC strategies** and verifies first BTC event and quote were rolled back, unaffected ETH saved, and subsequent BTC-only retry succeeds; a second test fails on the first strategy. Qlib's independently atomic model decisions/inputs/quotes remain tested.
+
+[Regression evidence, observed WSL clock/timers, and first-real-bar runbook](docs/SHADOW_ATOMIC_FIRST_DAY_READINESS.md).

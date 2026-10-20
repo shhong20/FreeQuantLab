@@ -214,3 +214,82 @@ def test_cycle_lock_is_nonblocking(tmp_path):
             run_cycle(db, btc, now=T20, fetch_fn=lambda a: frame("2026-10-19"),
                       quote_fn=lambda p,s,*,now:(100.,now.date().isoformat()))
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def test_three_track_asset_quote_and_virtual_events_rollback_together(tmp_path):
+    """A failure in strategy 2 must not commit strategy 1 or the public quote."""
+    from quantlab.ledger_audit import audit_shadow_ledger
+    from quantlab.quote_quality import execution_proxy_quality
+    db=tmp_path/"shadow.db"
+    bootstrap(db,ASSETS,Settings(),now=T20,
+              fetch_fn=lambda a:frame("2026-10-19"))
+    with _connection(db) as con:
+        target=con.execute(
+            "SELECT track_id FROM shadow_accounts WHERE symbol='KRW-BTC' "
+            "AND label='factor_r5_gt0'"
+        ).fetchone()["track_id"]
+        con.executescript(
+            "CREATE TRIGGER abort_middle_track BEFORE INSERT ON shadow_events "
+            f"WHEN NEW.track_id='{target}' BEGIN SELECT RAISE(ABORT,'injected'); END;"
+        )
+    inputs={a["symbol"]:frame("2026-10-20") for a in ASSETS}
+    first,quote_symbols=run(db,inputs)
+    assert first["status"]=="ERROR",first
+    assert set(quote_symbols)=={"KRW-BTC","KRW-ETH"}
+    assert sum(r["status"]=="RECORDED" for r in first["results"])==3
+    with _connection(db) as con:
+        btc=con.execute(
+            "SELECT * FROM shadow_events e JOIN shadow_accounts a ON a.track_id=e.track_id "
+            "WHERE a.symbol='KRW-BTC'"
+        ).fetchall()
+        assert btc==[]
+        assert con.execute(
+            "SELECT COUNT(*) FROM shadow_quote_evidence WHERE symbol='KRW-BTC'"
+        ).fetchone()[0]==0
+        assert con.execute(
+            "SELECT COUNT(*) FROM shadow_events e JOIN shadow_accounts a "
+            "ON e.track_id=a.track_id WHERE a.symbol='KRW-ETH'"
+        ).fetchone()[0]==3
+        assert all(r[0]==1000000 and r[1]==0 for r in con.execute(
+            "SELECT cash,units FROM shadow_accounts WHERE symbol='KRW-BTC'"
+        ))
+        con.execute("DROP TRIGGER abort_middle_track")
+    assert audit_shadow_ledger(db)["status"]=="PASS"
+    assert execution_proxy_quality(db)["status"]=="PASS"
+    # Scheduled retry of the same genuinely completed UTC day saves *only*
+    # the failed BTC batch and does not query ETH ticker again.
+    retried,calls=run(db,inputs)
+    assert retried["status"]=="OK",retried["errors"]
+    assert calls==["KRW-BTC"]
+    assert sum(r["status"]=="RECORDED" for r in retried["results"])==3
+    with _connection(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM shadow_events").fetchone()[0]==6
+        assert con.execute("SELECT COUNT(*) FROM shadow_quote_evidence").fetchone()[0]==2
+    assert audit_shadow_ledger(db)["status"]=="PASS"
+    assert execution_proxy_quality(db)["status"]=="PASS"
+
+
+def test_first_strategy_failure_does_not_leave_stray_ticker_evidence(tmp_path):
+    """Even failure before the first virtual account is recorded is atomic."""
+    from quantlab.ledger_audit import audit_shadow_ledger
+    db=tmp_path/"shadow.db"
+    a=[ASSETS[0]]
+    bootstrap(db,a,Settings(),now=T20,fetch_fn=lambda _:frame("2026-10-19"))
+    with _connection(db) as con:
+        con.executescript(
+            "CREATE TRIGGER reject_all BEFORE INSERT ON shadow_events "
+            "BEGIN SELECT RAISE(ABORT,'inject'); END;"
+        )
+    first=run_cycle(db,a,now=T21,fetch_fn=lambda _:frame("2026-10-20"),
+                    quote_fn=lambda p,s,*,now:(100.,now.date().isoformat()))
+    assert first["status"]=="ERROR"
+    assert first["results"]==[]
+    with _connection(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM shadow_quote_evidence").fetchone()[0]==0
+        assert con.execute("SELECT COUNT(*) FROM shadow_events").fetchone()[0]==0
+        con.execute("DROP TRIGGER reject_all")
+    assert audit_shadow_ledger(db)["status"]=="PASS"
+    second=run_cycle(db,a,now=T21,fetch_fn=lambda _:frame("2026-10-20"),
+                     quote_fn=lambda p,s,*,now:(100.,now.date().isoformat()))
+    assert second["status"]=="OK"
+    assert len([x for x in second["results"] if x["status"]=="RECORDED"])==3
