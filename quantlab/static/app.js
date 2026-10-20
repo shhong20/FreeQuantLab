@@ -173,6 +173,7 @@ async function refreshReportsAndAlerts() {
     try {
       const data=await reportResult.value.json();
       $("report-date").textContent=data.report_date_kst || "작성일 미확인";
+      const reviewById=new Map((data.manual_review?.strategies||[]).map(x=>[x.track_id,x]));
       for(const entry of (data.strategies||[])){
         const row=element("tr");
         td(row,entry.symbol.replace("KRW-","")+" / "+(labels[entry.strategy]||entry.strategy));
@@ -181,10 +182,12 @@ async function refreshReportsAndAlerts() {
         td(row,entry.vs_buy_hold_return_pp==null?"—":
           (entry.vs_buy_hold_return_pp>=0?"+":"")+
           entry.vs_buy_hold_return_pp.toFixed(2)+" pp","align-right");
+        const review=reviewById.get(entry.track_id);
+        td(row,review?.research_maturity==="READY_FOR_HUMAN_REVIEW"?"수동 검토 가능":"평가 자료 부족");
         target.appendChild(row);
       }
-      if(!target.children.length){const r=element("tr");td(r,"등록된 연구 전략 없음","waiting").colSpan=4;target.appendChild(r);}
-    }catch(error){const r=element("tr");td(r,"보고서 형식 확인 필요","waiting").colSpan=4;target.appendChild(r);}
+      if(!target.children.length){const r=element("tr");td(r,"등록된 연구 전략 없음","waiting").colSpan=5;target.appendChild(r);}
+    }catch(error){const r=element("tr");td(r,"보고서 형식 확인 필요","waiting").colSpan=5;target.appendChild(r);}
   }else{
     $("report-date").textContent="작성 대기";
     const r=element("tr");

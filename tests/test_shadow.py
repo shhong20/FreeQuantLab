@@ -107,7 +107,7 @@ def test_daily_loss_limit_persists_halt_and_never_auto_unhalts(tmp_path):
     assert halt_events
     third = run_cycle(db, btc, now=datetime(2026,10,23,0,14,tzinfo=timezone.utc),
                       fetch_fn=lambda a: frame("2026-10-22"),
-                      quote_fn=lambda p,s,*,now:(40.,now.date().isoformat()))
+                      quote_fn=lambda p,s,*,now:(90.,now.date().isoformat()))
     assert third["status"] == "OK"
     assert any(t["halted"] for t in status(db)["tracks"])
 

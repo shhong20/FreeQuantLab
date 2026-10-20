@@ -177,3 +177,14 @@ Reports: `reports/forward/YYYY-MM-DD.json` and `.md`. Dashboard: local-only `htt
 A WSL user `freequant-watchdog.timer` template checks at 10:30, 12:30 and 18:30 KST, after the forward-paper runner's 09:15–10:00 checks. On real new alert transitions it may invoke the Windows PowerShell Toast API; **successful API submission does not confirm a visible desktop notification**. Alert events remain available locally even when Windows notification delivery fails.
 
 [Operations runbook and delivery limitations](docs/WATCHDOG_AND_FORWARD_REPORTS.md).
+
+
+## Strict market data integrity and conservative research review (2026-10-20)
+
+The BTC/ETH forward-only Shadow Paper runner now performs **fail-closed public OHLCV and quote integrity checks before recording each future virtual fill**: exact completed UTC day, 100 consecutive recent daily candles without missing/duplicate sessions, valid finite candle bounds and volume, suspicious daily changes, and public quote sanity relative to the previous close. Raw Upbit duplicate UTC sessions are rejected before canonical normalization.
+
+Every watchdog cycle separately **replays cash/units/fees and account state** from the immutable SQLite paper events, validates frozen-strategy identity and forward event ordering, and blocks new performance reports if the virtual ledger fails reconciliation. No automatic repair is attempted.
+
+Daily reports also show **manual research review readiness**: at least 90 genuine forward observations, no missed observations, at least 8 virtual orders, no virtual risk halt, MDD better than -12%, identical benchmark dates and positive descriptive return advantage. These are *minimum sample checks, not proof of alpha*, and **never authorize strategy auto-promotion or live orders**. Qlib research inputs now have their own date/OHLCV validation (weekend gaps allowed for stocks).
+
+[Detailed validation and safety criteria](docs/DATA_LEDGER_QUALITY.md).

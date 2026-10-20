@@ -19,6 +19,7 @@ from urllib.request import urlopen
 
 from .forward_reports import report as build_report, save_report, _atomic
 from .monitor import snapshot
+from .ledger_audit import audit_shadow_ledger, evaluate_manual_review
 
 WINDOWS_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 # Only activated for real anomaly transitions, never during an initial no-alert check.
@@ -258,8 +259,35 @@ def check(
     try:
         snap = snapshot(shadow_db, now=instant)
         alerts.extend(snap["alerts"])
-        report_data = build_report(shadow_db, now=instant)
-        daily_paths = save_report(report_data, report_dir)
+        if snap["recent_runs"] and snap["recent_runs"][0]["status"]=="ERROR":
+            last_errors = snap["recent_runs"][0].get("errors", [])
+            if any(
+                "MarketIntegrityError" in str(e.get("error","")) or
+                "DataError" in str(e.get("error",""))
+                for e in last_errors if isinstance(e,dict)
+            ):
+                alerts.append(_synthetic_alert(
+                    "MARKET_DATA_QUALITY_REJECTED",
+                    "Latest forward paper cycle rejected market feed or public quote.",
+                ))
+        ledger_evidence = audit_shadow_ledger(shadow_db, now=instant)
+        if ledger_evidence["status"] != "PASS":
+            state = "DEGRADED"
+            alerts.append(_synthetic_alert(
+                "SHADOW_LEDGER_INTEGRITY_FAILED",
+                "Read-only replay found mismatched virtual accounting. Manual investigation required.",
+            ))
+            # No nominal daily performance report on compromised accounting.
+        else:
+            report_data = build_report(shadow_db, now=instant)
+            report_data["ledger_integrity"] = {
+                "status": "PASS", "accounts": ledger_evidence["accounts"],
+                "events": ledger_evidence["events"],
+            }
+            report_data["manual_review"] = evaluate_manual_review(
+                report_data, ledger_evidence
+            )
+            daily_paths = save_report(report_data, report_dir)
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
         state = "DEGRADED"
         alerts.append(_synthetic_alert(

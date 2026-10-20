@@ -80,6 +80,11 @@ def upbit_daily(market: str, bars: int = 800, *, now: datetime | None = None) ->
         time.sleep(0.15)
     if not records:
         raise DataError(f"No Upbit data for {market}")
+    # Do not silently de-duplicate raw provider records. A repeated session
+    # indicates an upstream/pagination integrity problem requiring review.
+    sessions = [x["candle_date_time_utc"][:10] for x in records]
+    if len(sessions) != len(set(sessions)):
+        raise DataError(f"Upbit returned duplicate UTC daily candles for {market}")
     df = pd.DataFrame([{
         "date": x["candle_date_time_utc"][:10], "open": x["opening_price"],
         "high": x["high_price"], "low": x["low_price"], "close": x["trade_price"],
