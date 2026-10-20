@@ -156,6 +156,21 @@ def test_ollama_json_schema_is_role_specific_and_strict(monkeypatch):
     assert observed == ["alpha_proposer", "risk_reviewer"]
 
 
+def test_model_factor_names_are_canonicalized_but_rules_remain_strict(monkeypatch):
+    agent = LocalLLMAgent("http://127.0.0.1:11434/v1", "exaone3.5:latest")
+    monkeypatch.setattr(agent, "_ask", lambda role, payload: {"factors": [
+        {"name": "5 day positive trend (don't run code)", "feature": "r5", "direction": "gt", "threshold": 0},
+        {"name": "고변동성 경고!", "feature": "vol10", "direction": "lt", "threshold": 0.03},
+    ]})
+    factors = agent.propose({"bar_count": 500})
+    assert [f.name for f in factors] == ["factor_1", "factor_2"]
+    assert factors[0].feature == "r5" and factors[1].feature == "vol10"
+    monkeypatch.setattr(agent, "_ask", lambda role, payload: {"factors": [
+        {"name": "safe", "feature": "__class__", "direction": "gt", "threshold": 0}]})
+    with pytest.raises(AgentError):
+        agent.propose({"bar_count": 500})
+
+
 def test_walk_forward_is_chronological_with_disjoint_test_periods():
     folds = walk_forward_windows(1000)
     assert len(folds) == 4
