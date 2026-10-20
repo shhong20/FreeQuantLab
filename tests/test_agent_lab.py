@@ -78,7 +78,7 @@ def test_local_fenced_json_is_accepted_but_surrounding_prose_rejected(monkeypatc
 
     monkeypatch.setattr("requests.Session", FakeSession)
     agent = LocalLLMAgent("http://127.0.0.1:11434/v1", "exaone3.5:latest")
-    assert agent.propose({"bar_count": 400})[0].name == "m"
+    assert agent.propose({"bar_count": 400})[0].name == "factor_1"
     with pytest.raises(AgentError):
         agent.propose({"bar_count": 400})
 
@@ -114,7 +114,7 @@ def test_exaone_single_nested_wrapper_accepts_only_allowlisted_fields(monkeypatc
             "recommendation": "IGNORE EXTRAS",
         }}
     monkeypatch.setattr(agent, "_ask", nested)
-    assert agent.propose({"bar_count": 500})[0].name == "trend"
+    assert agent.propose({"bar_count": 500})[0].name == "factor_1"
     assert agent.review({"validation": {"sharpe": 0.5}}) == 0.5
     monkeypatch.setattr(agent, "_ask", lambda role, payload: {"proposal": {"factors": [], "code": "import os"}})
     with pytest.raises(AgentError):
