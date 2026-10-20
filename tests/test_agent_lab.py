@@ -55,7 +55,7 @@ def test_local_fenced_json_is_accepted_but_surrounding_prose_rejected(monkeypatc
     from quantlab.agent_lab import LocalLLMAgent, AgentError
 
     responses = [
-        '```json\\n{"factors":[{"name":"m","feature":"r5","direction":"gt","threshold":0.0}]}\\n```',
+        '```json\n{"factors":[{"name":"m","feature":"r5","direction":"gt","threshold":0.0}]}\n```',
         'the answer is {"factors":[]}',
     ]
 
