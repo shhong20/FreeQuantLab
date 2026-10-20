@@ -236,3 +236,23 @@ An **actual local Exaone 3.5** training-summary Agent proposal was frozen at `pr
 Qlib LightGBM stays in historical research only until a separately hashed and restart-reproducible model checkpoint and future inference bridge exist. Do **not** describe the Exaone factor signal as a deployed Qlib model or claim proven investment returns.
 
 [New public quote record fields, isolated Agent commands, Qlib gating and limitations](docs/QUOTE_EVIDENCE_AGENT_LAB.md).
+
+
+## Immutable actual Qlib checkpoints and isolated BTC/ETH virtual model lane (2026-10-20)
+
+**Actual Microsoft Qlib LGBModel / LightGBM** was trained once on each asset's 240 fully closed UTC daily candles, excluding future-unavailable next-open labels. Each model is sealed with on-disk Booster weights, exact nine-feature source SHA, 24 historical golden inference vectors, SHA-256 manifest, runtime version checks, and fixed 0.55 threshold. A fresh Python process independently reproduced both checkpoints' golden predictions.
+
+Versioned recovery copies live under `models/qlib/KRW-BTC/` and `models/qlib/KRW-ETH/`; current runtime bundles in `state/qlib_models/`. The separately sealed lab plan is `protocols/2026-10-20-qlib-lab.json`.
+
+```bash
+.venv/bin/python -m quantlab.qlib_lab status --plan \
+  protocols/2026-10-20-qlib-lab.json --db state/qlib_lab_shadow.db
+
+# Optional MANUAL virtual observation (no broker order, no auto timer)
+.venv/bin/python -m quantlab.qlib_lab cycle --plan \
+  protocols/2026-10-20-qlib-lab.json --db state/qlib_lab_shadow.db
+```
+
+The independent Qlib virtual ledger starts with exactly 2 newly registered accounts. The 6-account 90-day experiment and 2-account Exaone factor lab remain untouched. **No evidence of investable alpha** and no automatic strategy promotion; even the actual LightGBM model is merely a newly registered research candidate.
+
+[Full checkpoint, SHA256, reproducibility, isolated paper and recovery guide](docs/QLIB_FROZEN_CHECKPOINT_LAB.md).
