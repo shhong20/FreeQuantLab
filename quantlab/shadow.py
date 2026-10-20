@@ -66,6 +66,17 @@ def _spec(spec: dict) -> dict:
         fast, slow = spec["fast"], spec["slow"]
         if type(fast) is int and type(slow) is int and 2 <= fast < slow <= 180:
             return dict(spec)
+    if kind == "qlib_frozen" and set(spec) == {
+        "label", "kind", "model_sha256", "manifest_sha256", "threshold"
+    }:
+        import re
+        if (label == "qlib_lgbmodel_055" and
+            spec["threshold"] == 0.55 and
+            all(isinstance(spec[k], str) and
+                re.fullmatch(r"[0-9a-f]{64}", spec[k])
+                for k in ("model_sha256", "manifest_sha256"))):
+            return dict(spec)
+        raise ValueError("Invalid frozen Qlib model specification")
     if kind == "factor" and set(spec) == {
         "label", "kind", "feature", "direction", "threshold"
     }:
@@ -90,6 +101,8 @@ def _target(frame: pd.DataFrame, spec: dict) -> int:
         if not np.isfinite(slow) or not np.isfinite(fast):
             raise ValueError("Insufficient past bars for frozen trend")
         return int(fast > slow)
+    if spec["kind"] == "qlib_frozen":
+        raise ValueError("Qlib model cannot run in generic Shadow Paper; use isolated validated lab")
     feats = build_features(frame)
     value = float(feats.iloc[-1][spec["feature"]])
     if not np.isfinite(value):
@@ -311,6 +324,8 @@ def run_cycle(
         frozen = con.execute("SELECT * FROM shadow_accounts ORDER BY symbol,label").fetchall()
         if not frozen:
             raise ValueError("No frozen tracks; shadow-bootstrap first")
+        if any(json.loads(a["spec_json"]).get("kind")=="qlib_frozen" for a in frozen):
+            raise ValueError("Frozen Qlib accounts can run only under the isolated Qlib lab runner")
         if protocol_path is not None:
             from .protocol_compliance import verify_frozen_accounts
             verify_frozen_accounts(frozen, protocol_path, now=current)
