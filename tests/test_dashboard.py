@@ -186,3 +186,66 @@ def test_server_static_has_no_external_deps_or_untrusted_innerhtml():
     assert "fetch(\"/api/status\"" in js
     assert "api/activate" not in html+js
     assert '[hidden]{display:none!important}' in css
+
+
+
+def test_report_and_alert_inbox_are_readonly_http_endpoints(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from quantlab.forward_reports import report, save_report
+    from quantlab.watchdog import persist_alert_transitions
+    from datetime import datetime, timezone
+    import sqlite3
+
+    path=database(tmp_path)
+    report_dir=tmp_path/"forward"
+    state=tmp_path/"watchdog.db"
+    daily=report(path,now=datetime(2026,10,20,3,tzinfo=timezone.utc))
+    save_report(daily,report_dir)
+    persist_alert_transitions(
+        state, [{"severity":"warning","code":"TEST_WARNING",
+                 "message":"test inbox","symbol":"KRW-BTC"}],
+        now=datetime(2026,10,20,3,tzinfo=timezone.utc),
+    )
+    httpd=ThreadingHTTPServer(
+        ("127.0.0.1",0),
+        make_handler(path,reports_dir=report_dir,alerts_db=state),
+    )
+    thread=threading.Thread(target=httpd.serve_forever,daemon=True)
+    thread.start()
+    try:
+        base=f"http://127.0.0.1:{httpd.server_address[1]}"
+        with urlopen(base+"/api/latest-report",timeout=4) as response:
+            data=json.load(response)
+            assert response.status==200
+            assert data["report_date_kst"]=="2026-10-20"
+            assert data["summary"]["tracks"]==3
+            assert not data["real_orders_enabled"]
+        with urlopen(base+"/api/alert-history",timeout=4) as response:
+            inbox=json.load(response)
+            assert inbox["events"][0]["code"]=="TEST_WARNING"
+            assert inbox["events"][0]["kind"]=="triggered"
+        with sqlite3.connect(state) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM notification_events").fetchone()[0]==1
+    finally:
+        httpd.shutdown();thread.join(timeout=3);httpd.server_close()
+
+
+def test_missing_report_and_missing_inbox_are_safe(tmp_path):
+    from http.server import ThreadingHTTPServer
+    path=database(tmp_path)
+    httpd=ThreadingHTTPServer(
+        ("127.0.0.1",0),
+        make_handler(path,reports_dir=tmp_path/"empty",alerts_db=tmp_path/"no.db")
+    )
+    thread=threading.Thread(target=httpd.serve_forever,daemon=True)
+    thread.start()
+    try:
+        base=f"http://127.0.0.1:{httpd.server_address[1]}"
+        with pytest.raises(HTTPError) as e:
+            urlopen(base+"/api/latest-report",timeout=4)
+        assert e.value.code==404
+        with urlopen(base+"/api/alert-history",timeout=4) as response:
+            assert json.load(response)=={"events":[]}
+        assert not (tmp_path/"no.db").exists()
+    finally:
+        httpd.shutdown();thread.join(timeout=3);httpd.server_close()

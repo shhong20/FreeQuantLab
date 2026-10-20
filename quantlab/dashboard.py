@@ -6,6 +6,7 @@ No external CDNs, credentials, mutation routes or real broker endpoints.
 from __future__ import annotations
 
 import argparse
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
@@ -23,9 +24,12 @@ ROUTES = {
 }
 
 
-def make_handler(db_path: str | Path):
+def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forward",
+                 alerts_db: str | Path = "state/watchdog.db"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
+    daily_dir = Path(reports_dir).resolve()
+    alert_store = Path(alerts_db).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -77,6 +81,39 @@ def make_handler(db_path: str | Path):
                     self._reply(503, {"status": "unavailable",
                                       "error": "Read-only shadow ledger is unavailable"},
                                 "application/json; charset=utf-8")
+                return
+            if path == "/api/latest-report":
+                try:
+                    found = sorted(daily_dir.glob("????-??-??.json"))
+                    if not found:
+                        self._reply(404, {"status": "not_ready"}, "application/json; charset=utf-8")
+                    else:
+                        data = json.loads(found[-1].read_text(encoding="utf-8"))
+                        if not isinstance(data, dict):
+                            raise ValueError("Invalid daily report")
+                        self._reply(200, data, "application/json; charset=utf-8")
+                except (OSError, ValueError):
+                    self._reply(503, {"status": "unavailable"}, "application/json; charset=utf-8")
+                return
+            if path == "/api/alert-history":
+                try:
+                    if not alert_store.is_file():
+                        self._reply(200, {"events": []}, "application/json; charset=utf-8")
+                        return
+                    with sqlite3.connect(alert_store.as_uri()+"?mode=ro", uri=True, timeout=3) as con:
+                        con.execute("PRAGMA query_only=ON")
+                        rows = con.execute(
+                            "SELECT event_time,event_kind,severity,code,message,delivery_status "
+                            "FROM notification_events ORDER BY id DESC LIMIT 30"
+                        ).fetchall()
+                    items = [
+                        {"time":r[0],"kind":r[1],"severity":r[2],
+                         "code":r[3],"message":r[4],"delivery":r[5]}
+                        for r in rows
+                    ]
+                    self._reply(200, {"events": items}, "application/json; charset=utf-8")
+                except (OSError, sqlite3.Error, ValueError):
+                    self._reply(503, {"status": "unavailable"}, "application/json; charset=utf-8")
                 return
             if path == "/healthz":
                 try:

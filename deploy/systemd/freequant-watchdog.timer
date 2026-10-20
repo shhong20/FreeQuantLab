@@ -1,0 +1,16 @@
+[Unit]
+Description=FreeQuantLab daily report and alert checks (KST)
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Timer]
+# Crypto candle 09:00 KST; old Shadow Paper retries until 10:00 KST.
+# Missing decision alert triggers after 10:20 KST.
+OnCalendar=*-*-* 10:30:00
+OnCalendar=*-*-* 12:30:00
+OnCalendar=*-*-* 18:30:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-watchdog.service
+
+[Install]
+WantedBy=timers.target

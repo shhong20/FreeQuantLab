@@ -163,6 +163,52 @@ function drawChart(info){
   }
 }
 function render(data){latest=data;updateMetrics(data);updateAlerts(data);renderAccounts(data);renderEvents(data);renderRuns(data);drawChart(data);}
+async function refreshReportsAndAlerts() {
+  const [reportResult, alertsResult] = await Promise.allSettled([
+    fetch("/api/latest-report",{cache:"no-store"}),
+    fetch("/api/alert-history",{cache:"no-store"}),
+  ]);
+  const target=$("report-rows");clear(target);
+  if(reportResult.status==="fulfilled" && reportResult.value.ok) {
+    try {
+      const data=await reportResult.value.json();
+      $("report-date").textContent=data.report_date_kst || "작성일 미확인";
+      for(const entry of (data.strategies||[])){
+        const row=element("tr");
+        td(row,entry.symbol.replace("KRW-","")+" / "+(labels[entry.strategy]||entry.strategy));
+        td(row,compact(entry.recorded_days),"align-right");
+        td(row,pct(entry.observed_total_return),"align-right");
+        td(row,entry.vs_buy_hold_return_pp==null?"—":
+          (entry.vs_buy_hold_return_pp>=0?"+":"")+
+          entry.vs_buy_hold_return_pp.toFixed(2)+" pp","align-right");
+        target.appendChild(row);
+      }
+      if(!target.children.length){const r=element("tr");td(r,"등록된 연구 전략 없음","waiting").colSpan=4;target.appendChild(r);}
+    }catch(error){const r=element("tr");td(r,"보고서 형식 확인 필요","waiting").colSpan=4;target.appendChild(r);}
+  }else{
+    $("report-date").textContent="작성 대기";
+    const r=element("tr");
+    td(r,"다음 정기 보고서 생성 이후 표시됩니다.","waiting").colSpan=4;
+    target.appendChild(r);
+  }
+  const history=$("alert-history");clear(history);
+  if(alertsResult.status==="fulfilled" && alertsResult.value.ok) {
+    try {
+      const data=await alertsResult.value.json();
+      const events=data.events||[];
+      if(!events.length){history.appendChild(element("div","waiting","아직 발생한 운영 장애 알림이 없습니다."));}
+      for(const ev of events.slice(0,10)){
+        const line=element("div","run");
+        line.appendChild(element("div","run-dot "+(ev.kind==="resolved"?"":ev.severity==="critical"?"failed":"")));
+        const main=element("div","run-main");
+        main.appendChild(element("b","",ev.code+" · "+(ev.kind==="resolved"?"복구":ev.kind==="triggered"?"발생":ev.kind)));
+        main.appendChild(element("small","",ev.message+" / "+ev.delivery));
+        line.appendChild(main);line.appendChild(element("time","",kst(ev.time)));
+        history.appendChild(line);
+      }
+    }catch(error){history.appendChild(element("div","waiting","알림 이력 형식 확인 필요"));}
+  }else{history.appendChild(element("div","waiting","경고 기록 연결 대기 중"));}
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -174,7 +220,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;}
+  }finally{button.disabled=false;await refreshReportsAndAlerts();}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;
