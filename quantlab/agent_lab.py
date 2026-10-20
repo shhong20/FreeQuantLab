@@ -85,7 +85,17 @@ class LocalLLMAgent:
                 if 300 <= res.status_code < 400:
                     raise AgentError("Model endpoint redirects are forbidden")
             content = res.json()["choices"][0]["message"]["content"]
-            obj = json.loads(content)
+            if not isinstance(content, str):
+                raise AgentError("Model output must be a JSON string")
+            body = content.strip()
+            # Some local Ollama models wrap otherwise-valid JSON in one fenced
+            # Markdown block. Unwrap only a WHOLE response, never extract a
+            # JSON-looking substring from prose or evaluate any model code.
+            import re as _re
+            fenced = _re.fullmatch(r"```(?:json)?[ \\t]*\\n([\\s\\S]*?)\\n```", body, flags=_re.IGNORECASE)
+            if fenced:
+                body = fenced.group(1).strip()
+            obj = json.loads(body)
         except AgentError:
             raise
         except (requests.RequestException, ValueError, KeyError, IndexError, TypeError) as exc:
