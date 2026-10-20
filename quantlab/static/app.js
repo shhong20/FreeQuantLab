@@ -291,7 +291,17 @@ async function updateLaneCoverage(){
 async function updateIsolatedWatchdog(){
   try {
     const response=await fetch("/api/isolated-status",{cache:"no-store"});
-    if(!response.ok)throw new Error("independent watcher not ready");
+    if(!response.ok){
+      const diagnostic=await response.json().catch(()=>({}));
+      if(diagnostic.status==="STALE_ISOLATED_WATCHDOG"){
+        $("isolated-monitor-state").textContent="감시 실행 지연";
+        $("isolated-monitor-summary").textContent="마지막 독립 감시 기록이 18시간 넘게 갱신되지 않았습니다.";
+        $("isolated-monitor-note").textContent="최종 실행 "+kst(diagnostic.last_checked_at_utc)+
+          " · WSL/타이머와 서비스 로그 확인 필요 · 실거래 없음";
+        return;
+      }
+      throw new Error("independent watcher not ready");
+    }
     const data=await response.json();
     const coverage=data.coverage||[];
     const missing=coverage.reduce((sum,item)=>sum+(item.missing_due_days||0),0);

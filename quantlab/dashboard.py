@@ -9,6 +9,7 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 from urllib.parse import urlsplit
@@ -96,8 +97,21 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                         report = json.loads(found[-1].read_text(encoding="utf-8"))
                         if not isinstance(report, dict) or report.get("real_orders_enabled") is not False:
                             raise ValueError("Invalid isolated paper watchdog report")
+                        checked = datetime.fromisoformat(report["checked_at_utc"])
+                        if checked.tzinfo is None:
+                            raise ValueError("Naive independent watchdog timestamp")
+                        age = datetime.now(timezone.utc) - checked.astimezone(timezone.utc)
+                        # Evening -> next morning gap is 16 hours. Anything
+                        # older than 18h misses at least one expected check.
+                        if age < timedelta(minutes=-5) or age > timedelta(hours=18):
+                            self._reply(503, {
+                                "status": "STALE_ISOLATED_WATCHDOG",
+                                "last_checked_at_utc": checked.isoformat(),
+                                "real_orders_enabled": False,
+                            }, "application/json; charset=utf-8")
+                            return
                         self._reply(200, report, "application/json; charset=utf-8")
-                except (OSError, ValueError):
+                except (OSError, ValueError, KeyError, TypeError):
                     self._reply(503, {"status": "unavailable"}, "application/json; charset=utf-8")
                 return
             if path == "/api/isolated-alerts":

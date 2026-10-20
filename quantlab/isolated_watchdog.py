@@ -28,7 +28,26 @@ def inspect_isolated(
     verify_func=verify_lane,
 ) -> dict:
     current = _utc(now)
-    policy = read_schedule(policy_path)
+    try:
+        policy = read_schedule(policy_path)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # A missing/tampered authorization is itself the most serious alert.
+        # Persist evidence with the *independent* watchdog rather than
+        # returning nonzero before any warning record can be committed.
+        return {
+            "status": "DEGRADED", "checked_at_utc": current.isoformat(),
+            "automation_policy_sha256": None, "due_utc_day": None,
+            "coverage": [],
+            "alerts": [{
+                "severity": "critical",
+                "code": "ISOLATED_AUTOMATION_POLICY_INVALID",
+                "strategy": "isolated_labs",
+                "message": "Immutable isolated automation authorization is missing "
+                           "or invalid: " + type(exc).__name__,
+            }],
+            "no_observed_returns_exposed": True,
+            "virtual_only": True, "real_orders_enabled": False,
+        }
     first = __import__("datetime").date.fromisoformat(policy["first_decision_utc"])
     last = __import__("datetime").date.fromisoformat(policy["last_decision_utc"])
     due = _due_decision(current, first, last)

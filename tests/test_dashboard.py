@@ -316,7 +316,7 @@ def test_isolated_dashboard_reads_only_separate_reports_and_alerts(tmp_path):
     root=tmp_path/"reports"/"isolated"
     root.mkdir(parents=True)
     root.joinpath("2026-10-20.json").write_text(json.dumps({
-        "status":"WAITING_FIRST_DUE","checked_at_utc":"2026-10-20T08:10:00+00:00",
+        "status":"WAITING_FIRST_DUE","checked_at_utc":datetime.now(timezone.utc).isoformat(),
         "coverage":[],"alerts":[],"real_orders_enabled":False,
     }))
     alerts=tmp_path/"isolated-watchdog-history.json"
@@ -368,3 +368,66 @@ def test_isolated_dashboard_fails_closed_on_invalid_virtual_order_permission(tmp
         httpd.shutdown()
         thread.join(timeout=3)
         httpd.server_close()
+
+
+def test_isolated_dashboard_refuses_stale_and_future_dated_watchdog_reports(tmp_path):
+    from datetime import timedelta
+    from http.server import ThreadingHTTPServer
+    root=tmp_path/"isolated"
+    root.mkdir()
+    file=root/"2026-10-20.json"
+    db=database(tmp_path)
+    httpd=ThreadingHTTPServer(("127.0.0.1",0),
+                              make_handler(db,isolated_reports=root))
+    thread=threading.Thread(target=httpd.serve_forever,daemon=True)
+    thread.start()
+    try:
+        base=f"http://127.0.0.1:{httpd.server_address[1]}"
+        for moment in (datetime.now(timezone.utc)-timedelta(hours=19),
+                       datetime.now(timezone.utc)+timedelta(minutes=6)):
+            file.write_text(json.dumps({
+                "status":"COLLECTING","checked_at_utc":moment.isoformat(),
+                "real_orders_enabled":False,"alerts":[],"coverage":[],
+            }))
+            with pytest.raises(HTTPError) as err:
+                urlopen(base+"/api/isolated-status",timeout=4)
+            assert err.value.code==503
+            payload=json.loads(err.value.read())
+            assert payload["status"]=="STALE_ISOLATED_WATCHDOG"
+            assert payload["real_orders_enabled"] is False
+        file.write_text(json.dumps({
+            "status":"WAITING_FIRST_DUE",
+            "checked_at_utc":datetime.now(timezone.utc).isoformat(),
+            "real_orders_enabled":False,"alerts":[],"coverage":[],
+        }))
+        with urlopen(base+"/api/isolated-status",timeout=4) as result:
+            assert result.status==200
+            assert json.load(result)["status"]=="WAITING_FIRST_DUE"
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=3)
+        httpd.server_close()
+
+
+def test_isolated_dashboard_missing_timestamp_fails_with_503_not_broken_connection(tmp_path):
+    from http.server import ThreadingHTTPServer
+    root=tmp_path/"isolated"
+    root.mkdir()
+    root.joinpath("2026-10-20.json").write_text(json.dumps({
+        "status":"COLLECTING", "real_orders_enabled":False
+    }))
+    db=database(tmp_path)
+    server=ThreadingHTTPServer(("127.0.0.1",0),
+                               make_handler(db,isolated_reports=root))
+    thread=threading.Thread(target=server.serve_forever,daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(HTTPError) as error:
+            urlopen(f"http://127.0.0.1:{server.server_address[1]}/api/isolated-status",
+                    timeout=4)
+        assert error.value.code==503
+        assert json.load(error.value)["status"]=="unavailable"
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+        server.server_close()
