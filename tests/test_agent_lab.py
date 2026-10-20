@@ -103,6 +103,24 @@ def test_model_payload_contains_training_not_future_prices(monkeypatch):
     assert all(f["results"]["C_agent_review"]["exposure_scale"] == 0.5 for f in result["folds"])
 
 
+def test_exaone_single_nested_wrapper_accepts_only_allowlisted_fields(monkeypatch):
+    agent = LocalLLMAgent("http://127.0.0.1:11434/v1", "exaone3.5:latest")
+    def nested(role, payload):
+        if role == "alpha_proposer":
+            return {"proposal": {"factors": [{"name": "trend", "feature": "r5", "direction": "gt", "threshold": 0.01}]}}
+        return {"validation_results": {
+            "strategy": "trend",
+            "risk_assessment": {"exposure_scale": 0.5, "reason": "moderate risk"},
+            "recommendation": "IGNORE EXTRAS",
+        }}
+    monkeypatch.setattr(agent, "_ask", nested)
+    assert agent.propose({"bar_count": 500})[0].name == "trend"
+    assert agent.review({"validation": {"sharpe": 0.5}}) == 0.5
+    monkeypatch.setattr(agent, "_ask", lambda role, payload: {"proposal": {"factors": [], "code": "import os"}})
+    with pytest.raises(AgentError):
+        agent.propose({"bar_count": 500})
+
+
 def test_walk_forward_is_chronological_with_disjoint_test_periods():
     folds = walk_forward_windows(1000)
     assert len(folds) == 4
