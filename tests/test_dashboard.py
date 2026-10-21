@@ -479,3 +479,51 @@ def test_dashboard_systemd_allows_sqlite_wal_sidecar_not_trade_mutations():
     source=inspect.getsource(monitor._read_db)
     assert '"?mode=ro"' in source or '"?mode=ro"' in repr(source)
     assert "PRAGMA query_only=ON" in source
+
+
+def test_daily_receipt_dashboard_exposes_only_recent_readonly_evidence(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from datetime import timedelta
+    root=tmp_path/"daily"
+    root.mkdir()
+    snap=root/"2026-10-21.json"
+    saved={
+        "status":"PASS",
+        "captured_at_utc":datetime.now(timezone.utc).isoformat(),
+        "real_orders_enabled":False,
+        "original_90d_returns":None,
+        "lanes":[{"lane":"qlib","due_date_evidence":[]}],
+        "research_integrity_status":"PREWINDOW_REVIEW_REQUIRED",
+    }
+    snap.write_text(json.dumps(saved))
+    db=database(tmp_path)
+    server=ThreadingHTTPServer(("127.0.0.1",0),
+                               make_handler(db,daily_receipts=root))
+    thread=threading.Thread(target=server.serve_forever,daemon=True)
+    thread.start()
+    address=f"http://127.0.0.1:{server.server_address[1]}/api/daily-receipt"
+    try:
+        with urlopen(address,timeout=4) as res:
+            result=json.load(res)
+            assert res.status==200
+        assert result["original_90d_returns"] is None
+        assert result["research_integrity_status"]=="PREWINDOW_REVIEW_REQUIRED"
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(address,method="POST",data=b"{}"),timeout=4)
+        assert error.value.code==405
+        saved["captured_at_utc"]=(datetime.now(timezone.utc)-timedelta(hours=29)).isoformat()
+        snap.write_text(json.dumps(saved))
+        with pytest.raises(HTTPError) as error:
+            urlopen(address,timeout=4)
+        assert error.value.code==503
+        assert json.load(error.value)["status"]=="STALE_DAILY_RECEIPT"
+        saved["captured_at_utc"]=datetime.now(timezone.utc).isoformat()
+        saved["original_90d_returns"]=.13
+        snap.write_text(json.dumps(saved))
+        with pytest.raises(HTTPError) as error:
+            urlopen(address,timeout=4)
+        assert error.value.code==503
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+        server.server_close()

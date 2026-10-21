@@ -1,0 +1,13 @@
+[Unit]
+Description=Verify all BTC ETH forward virtual observations after daily collection
+
+[Timer]
+OnCalendar=*-*-* 10:50:00
+OnCalendar=*-*-* 12:50:00
+OnStartupSec=5min
+Persistent=true
+AccuracySec=1min
+Unit=freequant-daily-receipt.service
+
+[Install]
+WantedBy=timers.target

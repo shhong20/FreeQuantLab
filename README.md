@@ -342,3 +342,11 @@ The original baseline executor now refuses new out-of-window virtual ticks when 
 ## Durable local watchdog alerts when Windows Toast is unavailable (2026-10-21)
 
 After the pre-window 90-day evaluation warning was properly persisted, WSL Windows-toast delivery failed and incorrectly made `freequant-watchdog.service` exit nonzero despite successful paper audit and local alert persistence. Both scheduled Watchdog services now run **local-alert-only** by default: SQLite/JSON durable incident histories and reports remain operational, without depending on Windows desktop interoperability. The optional `--windows-toast` manual CLI setting remains available but is not enabled automatically; **no Windows popup is promised**. [Why and how to check persistent alerts](docs/WATCHDOG_LOCAL_ALERT_FALLBACK.md).
+
+## Automated first-day and daily UTC paper evidence receipt (2026-10-21)
+
+The first actual automatic forward observations were **confirmed on Oct 21 at 10:20 KST**: Exaone 2 and Qlib 2 accounts recorded UTC 2026-10-20 with zero duplicates; frozen Qlib checkpoint feature/probability replay 2/2 PASS; all original/Exaone/Qlib ledgers and public ticker quotes PASS. Original baseline also recorded 6 events (4 BUY) on UTC 2026-10-20 **before the original protocol start**, a separately flagged integrity breach. Preserve the real-time virtual evidence; do not silently classify it as clean 90-day alpha.
+
+**New** read-only `quantlab.daily_receipt` produces an atomic per-KST-day report after each 10:20 KST virtual observation grace period. Scheduled at **10:50 and 12:50 KST**, plus ~5 min after WSL starts. On **Oct 22**, the first in-window 2026-10-21 UTC candle is expected to yield 6 baseline, 2 Exaone and 2 Qlib **unique, time-valid hypothetical observations**, with saved public ticker and independent frozen Qlib replay. The report fails closed if records are missing, does not create/backfill market orders, and separately retains the original pre-window research breach. Dashboard `GET /api/daily-receipt` shows operational evidence without publishing locked 90-day returns.
+
+[Observed 2026-10-21 proof, 2026-10-22 acceptance criteria and scheduled monitoring commands](docs/DAILY_FORWARD_ACCEPTANCE.md).
