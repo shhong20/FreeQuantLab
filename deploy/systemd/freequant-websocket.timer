@@ -1,0 +1,12 @@
+[Unit]
+Description=Short PUBLIC Upbit WebSocket quote+trade windows every 10 min
+
+[Timer]
+OnCalendar=*-*-* *:2/10:00
+OnStartupSec=5min
+AccuracySec=5s
+Persistent=true
+Unit=freequant-websocket.service
+
+[Install]
+WantedBy=timers.target
