@@ -431,3 +431,35 @@ def test_isolated_dashboard_missing_timestamp_fails_with_503_not_broken_connecti
         server.shutdown()
         thread.join(timeout=3)
         server.server_close()
+
+
+def test_archive_api_readonly_complete_historical_snapshot(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from quantlab.market_archive import catch_up
+    market=tmp_path/"market_history.db"
+    expected=bars("2026-10-19")
+    moment=datetime(2026,10,20,3,tzinfo=timezone.utc)
+    result=catch_up(market,now=moment,
+                    fetch_fn=lambda sym,amount,*,now:expected.copy())
+    assert result["status"]=="PASS",result["issues"]
+    root=database(tmp_path)
+    web=ThreadingHTTPServer(("127.0.0.1",0),make_handler(
+        root,market_archive_db=market))
+    t=threading.Thread(target=web.serve_forever,daemon=True)
+    t.start()
+    try:
+        target=f"http://127.0.0.1:{web.server_address[1]}/api/market-archive"
+        with urlopen(target,timeout=4) as response:
+            obj=json.load(response)
+            assert response.status==200
+        assert obj["rows"]==640
+        assert len(obj["assets"])==2
+        assert obj["historical_trade_execution_observed"] is False
+        assert obj["real_orders_enabled"] is False
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(target,method="POST",data=b'{}'),timeout=4)
+        assert error.value.code==405
+    finally:
+        web.shutdown()
+        t.join(timeout=3)
+        web.server_close()

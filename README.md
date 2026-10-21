@@ -307,3 +307,19 @@ Isolated Exaone/Qlib virtual-paper timers now allow observations only **09:10–
 The independent frozen-lab watchdog now **persists a critical alert** when its SHA-256-locked operational authorization is missing or tampered with, instead of crashing silently without writing an alert record. The read-only dashboard rejects an independent-watchdog snapshot older than **18 hours** or >5 minutes in the future, displaying a stale monitoring warning rather than an inaccurate healthy state.
 
 [WSL recovery, immutable authorization alert and stale report runbook](docs/WSL_TIMER_RECOVERY_AND_STALE_REPORT.md).
+
+
+## Automatic immutable historical Upbit OHLCV recovery (2026-10-21)
+
+When Windows/WSL is restarted, completed BTC/ETH UTC daily market candles are **re-fetched from the actual public Upbit API** and missing OHLCV dates appended into an independent file-locked SQLite `state/market_history.db`. Every row retains its first actual retrieval timestamp and historical seed/catch-up provenance. Prior rows are **not** overwritten on an Upbit data revision; missing data beyond provider overlap fails closed. This restores recoverable historical *market data*, **not** hypothetical forward paper fills or unrealized executable ticker quotes.
+
+The initial live import succeeded: 800 BTC and 800 ETH daily candles covering 2024-08-12 through 2026-10-20 UTC; 1,600 public data rows in total. New WSL user-systemd `freequant-market-archive.timer` has daily checks at **09:07/09:47/12:07 KST**, `OnStartupSec=2min`, `Persistent=true`. Watchdog monitors archive staleness; local read-only dashboard `GET /api/market-archive` shows row counts and recovered dates.
+
+```bash
+.venv/bin/python -m quantlab.market_archive status
+.venv/bin/python -m quantlab.market_archive catch-up
+```
+
+Note: on 2026-10-21 KST the *original* 90-day paper runner recorded six virtual events dated 2026-10-20 UTC (four BUY) **one day before the prospective scoring window**. The immutable candle archive did not create these fills. They must be disclosed/excluded from 90-day confirmatory claims pending a documented opening-inventory treatment; never silently delete them.
+
+[Upbit historic data recovery, Windows/WSL resume limitations and audit guide](docs/MARKET_HISTORY_CATCHUP.md).

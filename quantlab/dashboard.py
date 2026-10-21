@@ -32,7 +32,8 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                  agent_plan: str | Path = "protocols/2026-10-20-exaone-agent-lab.json",
                  qlib_plan: str | Path = "protocols/2026-10-20-qlib-lab.json",
                  isolated_reports: str | Path = "reports/isolated",
-                 isolated_alerts: str | Path = "state/isolated-watchdog-history.json"):
+                 isolated_alerts: str | Path = "state/isolated-watchdog-history.json",
+                 market_archive_db: str | Path = "state/market_history.db"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
     daily_dir = Path(reports_dir).resolve()
@@ -44,6 +45,7 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
     qlib_plan_source = Path(qlib_plan).resolve()
     isolated_reports_dir = Path(isolated_reports).resolve()
     isolated_alert_store = Path(isolated_alerts).resolve()
+    market_archive_source = Path(market_archive_db).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -87,6 +89,14 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                             "application/json; charset=utf-8")
                 return
             path = urlsplit(self.path).path
+            if path == "/api/market-archive":
+                try:
+                    from .market_archive import audit_archive
+                    record=audit_archive(market_archive_source)
+                    self._reply(200,record,"application/json; charset=utf-8")
+                except (OSError,ValueError,KeyError,RuntimeError):
+                    self._reply(503,{"status":"unavailable"},"application/json; charset=utf-8")
+                return
             if path == "/api/isolated-status":
                 try:
                     found = sorted(isolated_reports_dir.glob("????-??-??.json"))

@@ -26,6 +26,7 @@ from .watchdog import (
 def inspect_isolated(
     *, policy_path: str | Path = DEFAULT_POLICY, now: datetime | None = None,
     verify_func=verify_lane,
+    archive_db: str | Path | None = None,
 ) -> dict:
     current = _utc(now)
     try:
@@ -126,6 +127,24 @@ def inspect_isolated(
                     "recorded_due_days": None, "missing_due_days": None,
                     "first_missing_utc_day": None,
                 })
+    if archive_db is not None:
+        try:
+            from .market_archive import audit_archive
+            history=audit_archive(archive_db,now=current)
+            if history["status"]!="PASS":
+                alerts.append({
+                    "severity":"warning","code":"MARKET_HISTORY_CATCHUP_REQUIRED",
+                    "strategy":"historical_data_archive",
+                    "message":"Historical BTC/ETH UTC candle archive is missing, "
+                              "stale or requires provider data review.",
+                })
+        except (OSError,ValueError,KeyError,RuntimeError,sqlite3.Error):
+            alerts.append({
+                "severity":"critical","code":"MARKET_HISTORY_ARCHIVE_AUDIT_FAILED",
+                "strategy":"historical_data_archive",
+                "message":"Historical candle archive audit failed; virtual "
+                          "execution ledgers have not been modified.",
+            })
     return {
         "status": "DEGRADED" if any(a["severity"] == "critical" for a in alerts)
                   else "WARNING" if alerts else
@@ -147,10 +166,12 @@ def check_isolated(
     now: datetime | None = None,
     windows_notifications: bool = False,
     verify_func=verify_lane,
+    archive_db: str | Path | None = None,
 ) -> dict:
     current = _utc(now)
     result = inspect_isolated(
         policy_path=policy_path, now=current, verify_func=verify_func,
+        archive_db=archive_db,
     )
     transitions = persist_alert_transitions(state_db, result["alerts"], now=current)
     delivery = deliver_pending(state_db, toast=windows_notifications, now=current)
@@ -179,11 +200,13 @@ def main(argv=None) -> int:
     parser.add_argument("--state-db", default="state/isolated-watchdog.db")
     parser.add_argument("--report-dir", default="reports/isolated")
     parser.add_argument("--windows-toast", action="store_true")
+    parser.add_argument("--archive-db", default="state/market_history.db")
     args = parser.parse_args(argv)
     try:
         result = check_isolated(
             policy_path=args.policy, state_db=args.state_db,
             report_dir=args.report_dir, windows_notifications=args.windows_toast,
+            archive_db=args.archive_db,
         )
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 2 if result["status"] == "DEGRADED" or (

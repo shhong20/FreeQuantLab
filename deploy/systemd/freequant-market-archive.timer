@@ -1,0 +1,14 @@
+[Unit]
+Description=Recover public daily OHLCV on WSL startup and after UTC daily close
+
+[Timer]
+OnStartupSec=2min
+OnCalendar=*-*-* 09:07:00
+OnCalendar=*-*-* 09:47:00
+OnCalendar=*-*-* 12:07:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-market-archive.service
+
+[Install]
+WantedBy=timers.target
