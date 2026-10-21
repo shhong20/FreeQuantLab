@@ -1,0 +1,19 @@
+[Unit]
+Description=FreeQuantLab public Upbit L2 and recent-trade evidence (read only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-microstructure-20261021
+ExecStart=/usr/bin/flock -n /home/hong/apps/FreeQuantLab/state/microstructure/.collector.lock /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
+TimeoutStartSec=55
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state/microstructure
+StandardOutput=journal
+StandardError=journal

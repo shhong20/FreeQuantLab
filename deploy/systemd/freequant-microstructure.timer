@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect public 30-level Upbit orderbooks and trade prints every 10 min
+
+[Timer]
+OnCalendar=*-*-* *:0/10:30
+OnStartupSec=90s
+AccuracySec=5s
+Persistent=true
+Unit=freequant-microstructure.service
+
+[Install]
+WantedBy=timers.target

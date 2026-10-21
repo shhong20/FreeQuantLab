@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab public microstructure coverage/watchdog audit
+After=freequant-microstructure.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-microstructure-20261021
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer --audit --require-fresh-seconds 1800 --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
+TimeoutStartSec=35
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state/microstructure
+StandardOutput=journal
+StandardError=journal

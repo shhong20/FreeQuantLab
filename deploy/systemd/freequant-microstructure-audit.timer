@@ -1,0 +1,12 @@
+[Unit]
+Description=Check public quote/trade evidence integrity and missing slots every 30 min
+
+[Timer]
+OnCalendar=*-*-* *:5/30:00
+OnStartupSec=3min
+AccuracySec=30s
+Persistent=true
+Unit=freequant-microstructure-audit.service
+
+[Install]
+WantedBy=timers.target
