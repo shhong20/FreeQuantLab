@@ -63,3 +63,37 @@ PYTHONPATH=. /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstru
 ```
 
 추가 개선 과제: 실제 orderbook WebSocket + trade WebSocket 구독으로 시간 정렬 범위를 촘촘하게 만들고, 누락률·지연·재연결을 검증. 데이터 보유량이 커지면 immutable 압축 아카이브·파티션·장기 감사 범위를 추가. 실제 호가 수집은 **특정 시점의 가격 깊이 관측**이지 주문의 최종 체결 사실을 증명하지 않는다.
+
+
+## 2026-10-21 후속 실서버 검증 및 Rolling-24h 독립 게이트
+
+2026-10-21 15:34 KST 기준 실제 수집 원장 8개 연속 슬롯, 32개 자산별 orderbook, 6,400개 공개 market trade 샘플, 5,151개 고유 ID, 원장 오류 0건. 15:00 / 15:10 / 15:20 / 15:30의 **systemd 예약 수집**과 15:05 감사가 실제 수행됨. 중간 WSL reboot 후 15:04 auto-onstartup이 기존 슬롯을 중복 저장하지 않은 것도 journald로 확인. 15:40의 새 예약에서도 다음 슬롯이 저장돼 후속 게이트 실데이터 검증 시점에는 **9개 연속 수집**, 0개 운영 누락.
+
+기존에는 `inspect`가 상세 최근 48시간을 감사하면서, 설치 이전의 24시간 범위도 예상 슬롯에 포함하거나 최근 48시간 전체 기간의 평균 성공률을 한 번에 보여줬다. 이제 `quantlab/microstructure_24h_gate.py`를 **독립 watchdog 단계**로 추가:
+
+- 종료된 UTC 10분 구간 중 최근 **144개 due slot**을 평가. 서비스 실행 여유 2분을 적용해 아직 시간이 되지 않은 슬롯을 누락으로 오인하지 않음.
+- 운영을 시작하기 이전의 슬롯은 `pre_installation_slots_not_observed`로 별도 구분. 실제 수집 시작 이후의 `observed_operational_slot_coverage`도 별도 출력. 이 값이 100%여도 아직 관측 24시간이 지나지 않았으면 `COLLECTING_NOT_YET_24_HOURS`로 평가.
+- 과거 원본을 모두 무결성 검증한 뒤, **최초 수집 이후 실제 24시간 경과 + 최근 144 due slot의 수집률 90% 이상 + 연속 누락 최대 3구간 + BTC/ETH/XRP/ADA 종목별 독립 timestamp 100개 이상 + 마지막 성공 30분 이내** 모두 충족해야 `24H_VISIBLE_L2_COVERAGE_PASS_NOT_REAL_FILL_CALIBRATION`.
+- **24시간 미만:** 연구 상태를 유지하고 품질 부족 자체로 audit 서비스 실패 처리하지 않음.
+- **24시간 이후 품질 미달:** `24H_VISIBLE_L2_COVERAGE_DEGRADED`, `--enforce-after-24h` 실행은 exit 2, systemd/journald에서 실패 판정.
+- **통과해도** visible 30레벨 depth 품질 관측 조건만 충족. 지연, 대기열, 비동기 시장 체결, 최근 200건 제한, 실제 고객 주문 체결률 **미검증**. 실거래/자동 전략 승격 불허.
+
+이 독립 체크는 원래 30분마다 실행하는 `freequant-microstructure-audit.service`의 두 번째 `ExecStart`로 등록되어, 기존 SHA·freshness 감사 통과 후 실행된다. Python 테스트는 정상 145연속 수집, 장시간 중단, 오래된 관측, 운영 시작 전의 빈 슬롯 처리 및 systemd 실행 계약을 포함한다.
+
+읽기 전용 현재 검증:
+
+```bash
+cd /home/hong/apps/FreeQuantLab-observer-runtime
+/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_24h_gate \
+    --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
+```
+
+자동 감사/품질 미달 시 exit 2로 알리기:
+
+```bash
+/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_24h_gate \
+  --enforce-after-24h \
+  --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
+```
+
+실제 24시간 경과 조건은 첫 성공 수집 시점인 2026-10-21 14:25:39 KST 이후 실제로 시간이 지났을 때만 인정한다. 따라서 2026-10-21 오후 중 테스트에서 합성한 145개 행은 실서버의 실제 24시간 증거로 취급하지 않는다.
