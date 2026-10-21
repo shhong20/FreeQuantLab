@@ -1,0 +1,17 @@
+[Unit]
+Description=FreeQuantLab immutable public historical market OHLCV catch-up (not a virtual trade)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.market_archive catch-up --db state/market_history.db
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state
+StandardOutput=journal
+StandardError=journal

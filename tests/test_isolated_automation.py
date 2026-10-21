@@ -288,3 +288,16 @@ def test_missing_authorization_still_persists_critical_alert(policy):
     assert result["status"]=="DEGRADED"
     assert len(result["alert_transitions"])==1
     assert result["alert_transitions"][0]["code"]=="ISOLATED_AUTOMATION_POLICY_INVALID"
+
+
+def test_isolated_watchdog_warns_when_historical_market_archive_not_caught_up(policy):
+    path,body,tmp=policy
+    archive=tmp/"market_history.db"
+    result=inspect_isolated(policy_path=path,now=EARLY,
+                            verify_func=lambda *args,**kwargs:None,
+                            archive_db=archive)
+    assert result["status"]=="WARNING"
+    assert any(x["code"]=="MARKET_HISTORY_CATCHUP_REQUIRED"
+               for x in result["alerts"])
+    assert result["real_orders_enabled"] is False
+    assert not archive.exists()

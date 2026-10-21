@@ -320,6 +320,23 @@ async function updateIsolatedWatchdog(){
     $("isolated-monitor-note").textContent="가상계좌 상태를 정상으로 추정하지 않습니다.";
   }
 }
+async function updateMarketArchive(){
+  try{
+    const reply=await fetch("/api/market-archive",{cache:"no-store"});
+    if(!reply.ok)throw new Error("archive unavailable");
+    const d=await reply.json();
+    $("archive-market-state").textContent=d.status==="PASS"?"시장 데이터 보관 정상":"시장 데이터 점검 필요";
+    $("archive-market-summary").textContent=(d.assets||[]).map(x=>
+      x.symbol+" : "+x.rows+"개 · 최종 "+(x.latest_utc_day||"없음")
+    ).join(" / ")||"보관 기록 없음";
+    $("archive-market-note").textContent="보관 총 "+(d.rows||0)+"개 일봉 · 최종 동기화 "+
+      (d.last_catchup_attempt_at_utc?kst(d.last_catchup_attempt_at_utc):"미실행")+
+      " · "+(d.issues?.length?"검토: "+d.issues.join(", "):"가상 거래·실제 체결 소급 기록 없음");
+  }catch(error){
+    $("archive-market-state").textContent="보관 원장 조회 실패";
+    $("archive-market-summary").textContent="누락된 시장 데이터 상태를 확인할 수 없습니다.";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -331,7 +348,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage(),updateIsolatedWatchdog()]);}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage(),updateIsolatedWatchdog(),updateMarketArchive()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;
