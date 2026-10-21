@@ -356,6 +356,26 @@ def run_cycle(
                         (current.isoformat(),"OK",json.dumps(skipped,sort_keys=True)),
                     )
                 return skipped
+            # A Persistent systemd timer may replay after a late Windows/WSL
+            # restart. Yesterday's candle alone cannot justify capturing an
+            # entirely different current ticker hours after UTC close.
+            # 00:10-01:19 UTC == 09:10-10:19 KST, including daily retries.
+            if not (0, 10) <= (current.hour, current.minute) < (1, 20):
+                skipped={
+                    "status":"OK","started_at_utc":current.isoformat(),
+                    "tracks":len(frozen),"results":[{
+                        "status":"OUTSIDE_OBSERVATION_WINDOW",
+                        "decision_date":latest_completed_day,
+                    }],
+                    "errors":[],"real_orders_enabled":False,
+                    "promotion_enabled":False,
+                }
+                with con:
+                    con.execute(
+                        "INSERT INTO shadow_runs(created_at,status,details_json) VALUES (?,?,?)",
+                        (current.isoformat(),"OK",json.dumps(skipped,sort_keys=True)),
+                    )
+                return skipped
         configured = {(a["provider"], a["symbol"]): a for a in assets}
         by_symbol: dict[tuple[str,str], list] = {}
         for row in frozen:
