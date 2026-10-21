@@ -1,0 +1,15 @@
+[Unit]
+Description=FreeQuantLab append-only websocket backup on a separate mounted D volume
+Documentation=https://github.com/shhong20/FreeQuantLab
+
+[Timer]
+# A single bounded catch-up cycle each hour, plus one after WSL reboot.
+# Never trigger live orders, delete evidence or contact a remote NAS.
+OnCalendar=*-*-* *:45:00
+OnBootSec=15min
+AccuracySec=1min
+Persistent=true
+Unit=freequant-websocket-backup.service
+
+[Install]
+WantedBy=timers.target
