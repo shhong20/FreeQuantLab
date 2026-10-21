@@ -463,3 +463,19 @@ def test_archive_api_readonly_complete_historical_snapshot(tmp_path):
         web.shutdown()
         t.join(timeout=3)
         web.server_close()
+
+
+def test_dashboard_systemd_allows_sqlite_wal_sidecar_not_trade_mutations():
+    """After writer checkpoints and removes WAL, RO reader needs -shm creation."""
+    from pathlib import Path
+    unit=(Path(__file__).resolve().parents[1]/
+          "deploy/systemd/freequant-dashboard.service").read_text()
+    assert "ProtectSystem=strict" in unit
+    assert "ProtectHome=read-only" in unit
+    assert "ReadWritePaths=/home/hong/apps/FreeQuantLab/state" in unit
+    assert "ReadOnlyPaths=/home/hong/apps/FreeQuantLab/state" not in unit
+    from quantlab import monitor
+    import inspect
+    source=inspect.getsource(monitor._read_db)
+    assert '"?mode=ro"' in source or '"?mode=ro"' in repr(source)
+    assert "PRAGMA query_only=ON" in source

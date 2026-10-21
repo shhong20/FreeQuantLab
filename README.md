@@ -323,3 +323,8 @@ The initial live import succeeded: 800 BTC and 800 ETH daily candles covering 20
 Note: on 2026-10-21 KST the *original* 90-day paper runner recorded six virtual events dated 2026-10-20 UTC (four BUY) **one day before the prospective scoring window**. The immutable candle archive did not create these fills. They must be disclosed/excluded from 90-day confirmatory claims pending a documented opening-inventory treatment; never silently delete them.
 
 [Upbit historic data recovery, Windows/WSL resume limitations and audit guide](docs/MARKET_HISTORY_CATCHUP.md).
+
+
+### Dashboard SQLite WAL read-only regression guard (2026-10-21)
+
+After the first genuine BTC/ETH simulated account observations, SQLite checkpointed and removed its transient `-wal`/`-shm` sidecars. The dashboard systemd unit's filesystem-wide `ReadOnlyPaths=state` made SQLite `mode=ro` unable to recreate the shared-memory sidecar, causing dashboard `/healthz` and `/api/status` to disconnect even though all three databases were intact. The unit now grants **only the state directory** SQLite sidecar write access (`ReadWritePaths=state`) while retaining `ProtectSystem=strict`, `ProtectHome=read-only`, and the Python `mode=ro` / `PRAGMA query_only=ON` guards. HTTP mutation routes remain rejected; no live broker support. WSL live API smoke checks confirmed all six status endpoints returned HTTP 200 after service restart.
