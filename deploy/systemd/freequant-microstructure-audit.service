@@ -4,7 +4,7 @@ After=freequant-microstructure.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/hong/apps/FreeQuantLab-microstructure-20261021
+WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer --audit --require-fresh-seconds 1800 --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
 TimeoutStartSec=35
 Environment=PYTHONDONTWRITEBYTECODE=1
