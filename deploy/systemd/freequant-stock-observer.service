@@ -1,0 +1,20 @@
+[Unit]
+Description=FreeQuantLab public Korean and US stock daily data research only (NO orders)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_daily_observer --capture --db /home/hong/apps/FreeQuantLab/state/stock_daily/observations.sqlite3
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_daily_observer --audit --db /home/hong/apps/FreeQuantLab/state/stock_daily/observations.sqlite3
+TimeoutStartSec=155
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state/stock_daily
+StandardOutput=journal
+StandardError=journal

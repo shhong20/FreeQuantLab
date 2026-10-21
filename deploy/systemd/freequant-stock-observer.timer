@@ -1,0 +1,15 @@
+[Unit]
+Description=FreeQuantLab published Korean and US daily bar observations (not trading)
+
+[Timer]
+# 09:30 KST: US previous-day post-close. 21:30 KST: KRX after extended-hours close.
+# Replay after host start re-requests public history, never reconstructs orders.
+OnCalendar=*-*-* 09:30:00
+OnCalendar=*-*-* 21:30:00
+OnBootSec=20min
+AccuracySec=1min
+Persistent=true
+Unit=freequant-stock-observer.service
+
+[Install]
+WantedBy=timers.target
