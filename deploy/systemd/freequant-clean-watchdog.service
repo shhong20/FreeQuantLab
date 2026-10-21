@@ -1,0 +1,16 @@
+[Unit]
+Description=FreeQuantLab independent clean 90-day observation audit and alerts
+After=freequant-clean-shadow.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.clean_cohort --db state/clean_shadow_90d.db --protocol protocols/2026-10-21-btc-eth-clean-90d.json --alert-db state/clean-watchdog.db --report-dir reports/clean-daily
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/clean-daily
+StandardOutput=journal
+StandardError=journal

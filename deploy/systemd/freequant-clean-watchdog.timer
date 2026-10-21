@@ -1,0 +1,14 @@
+[Unit]
+Description=Verify clean cohort all due account-days and immutable market evidence
+
+[Timer]
+# Last paper retry is 10:10 KST; due-date grace expires 10:20 KST.
+OnCalendar=*-*-* 10:50:00
+OnCalendar=*-*-* 12:50:00
+OnStartupSec=8min
+Persistent=true
+AccuracySec=1min
+Unit=freequant-clean-watchdog.service
+
+[Install]
+WantedBy=timers.target

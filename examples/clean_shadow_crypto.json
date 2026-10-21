@@ -1,0 +1,12 @@
+{
+  "assets": [
+    {"provider": "upbit", "symbol": "KRW-BTC", "kind": "crypto", "currency": "KRW", "bars": 240},
+    {"provider": "upbit", "symbol": "KRW-ETH", "kind": "crypto", "currency": "KRW", "bars": 240}
+  ],
+  "initial_cash": 1000000,
+  "max_position_fraction": 0.2,
+  "fee_bps": 10,
+  "slippage_bps": 5,
+  "max_paper_daily_loss": 0.03,
+  "paper_min_days": 90
+}

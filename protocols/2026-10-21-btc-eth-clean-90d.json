@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "protocol_kind": "preregistered_forward_virtual_account_observation",
+  "created_at_utc": "2026-10-21T01:57:29.374520+00:00",
+  "first_eligible_decision_utc": "2026-10-22",
+  "last_eligible_decision_utc": "2027-01-19",
+  "evaluation_not_before_utc": "2027-01-20T00:00:00+00:00",
+  "required_complete_utc_days": 90,
+  "benchmark_strategy_label": "buy_hold_20pct",
+  "account_set": [
+    {
+      "track_id": "21398ab608542b8510526acf",
+      "symbol": "KRW-BTC",
+      "label": "buy_hold_20pct",
+      "spec_and_account_sha256": "f3afad33ba0cf27ba182791e7aa03c9cb014e8a1d65e0a3f968089cedc4ba639"
+    },
+    {
+      "track_id": "84296208e7a69cbfa9c57156",
+      "symbol": "KRW-BTC",
+      "label": "factor_r5_gt0",
+      "spec_and_account_sha256": "15a6d414ead78fd2bad16c14f93e0cdee8ce86435f1270d5ef986876178477e5"
+    },
+    {
+      "track_id": "9c5306814213362227f9b88d",
+      "symbol": "KRW-BTC",
+      "label": "trend_ma20_80",
+      "spec_and_account_sha256": "bbe95669134b2732ee5a03f3bcb4541d21db4de7317c2153b22fb87fda0b6142"
+    },
+    {
+      "track_id": "6fb5a24a4559b51ad47d0e36",
+      "symbol": "KRW-ETH",
+      "label": "buy_hold_20pct",
+      "spec_and_account_sha256": "8b8444f766a6471799b59670113caad8dbeee4e0e9e05b2f4016d2c2f28412bf"
+    },
+    {
+      "track_id": "62c4182cb595343aca3ed0af",
+      "symbol": "KRW-ETH",
+      "label": "factor_r5_gt0",
+      "spec_and_account_sha256": "63ee788f32bc6ffe735f3ee6918e2088c70bb88f6788eca57d2e3dc52320bbb6"
+    },
+    {
+      "track_id": "8095af646960a07a727ed538",
+      "symbol": "KRW-ETH",
+      "label": "trend_ma20_80",
+      "spec_and_account_sha256": "6fd906a5ae28cd3b63b4faedc0f80cdedbde754ce9b7f2d986884794738edd21"
+    }
+  ],
+  "predeclared_questions": [
+    "Is candidate log return greater than same-symbol 20-percent-exposure buy/hold?",
+    "Are all prespecified UTC decision days observed, and was the account never halted?"
+  ],
+  "real_broker_order_permission": false,
+  "automatic_strategy_promotion": false,
+  "blinded_holdout": false,
+  "limitations": "Interim equity is visible on the dashboard. Not a blinded or independent-outcome experiment.",
+  "sha256": "6f5e9cf6333d3dd5fe4339ef9d7ba401df36bc361915584bf45226f464cc5054"
+}

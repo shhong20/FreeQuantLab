@@ -118,8 +118,9 @@ def test_clock_rollback_and_deleted_manifest_fail_closed(study):
 
 def test_missed_first_day_cannot_be_backfilled_after_restart(study):
     db,manifest,_=study
-    future=datetime(2026,10,24,1,21,tzinfo=timezone.utc)
-    # At most current next-day ticker is used; never forge missed Oct 21-22.
+    future=datetime(2026,10,24,1,18,tzinfo=timezone.utc)
+    after_grace=datetime(2026,10,24,1,21,tzinfo=timezone.utc)
+    # Only an on-time current-day ticker may be used; never forge Oct 21-22.
     price=float(bars("2026-10-23")["close"].iloc[-1])
     res=run_cycle(db,[ASSET],now=future,
         fetch_fn=lambda _:bars("2026-10-23"),
@@ -127,7 +128,7 @@ def test_missed_first_day_cannot_be_backfilled_after_restart(study):
         protocol_path=manifest,
     )
     assert res["status"]=="OK"
-    coverage=assess_collection(db,manifest,now=future)
+    coverage=assess_collection(db,manifest,now=after_grace)
     assert coverage["status"]=="BREACH_OR_MISSING"
     assert coverage["expected_due_days_per_account"]==3
     assert all(t["observed_due_days"]==1 and t["missing_due_days"]==2 for t in coverage["accounts"])
