@@ -241,6 +241,10 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
             "all_raw_payload_SHA256_verified":
                 evidence["sha256_all_history_source_payloads_verified"],
             "material_conflicts":evidence["material_price_or_adjustment_conflicts"],
+            "vendor_volume_revisions_stored_immutably":
+                evidence["vendor_volume_revisions_retained_without_rewrite"],
+            "volume_dependent_model_features_not_certified":
+                evidence["volume_revisions_may_affect_volume_features"],
             "vendor_adjustment_rounding_jitter_kept":
                 evidence["retained_vendor_adjustment_precision_jitter_events"],
             "official_dividend_split_and_ETF_distribution_not_verified":True,
@@ -268,6 +272,9 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
                 "NO_CAUSAL_662_SESSION_STOCK_MODEL_HISTORY")
             result["unresolved_issues"].append(
                 "LONG_VENDOR_PRICE_HISTORY_EXISTS_BUT_NO_CAUSAL_FROZEN_STOCK_QLIB_MODEL")
+        if evidence["vendor_volume_revisions_retained_without_rewrite"]:
+            result["unresolved_issues"].append(
+                "VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION")
         if evidence["material_price_or_adjustment_conflicts"]:
             result["unresolved_issues"].append(
                 "LONG_VENDOR_PRICE_OR_ADJUSTMENT_CONFLICTS_REQUIRE_REVIEW")
