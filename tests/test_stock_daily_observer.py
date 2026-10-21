@@ -152,7 +152,8 @@ def test_systemd_stock_market_not_cryptocurrency_and_safe_startup():
     root=Path(__file__).resolve().parents[1]/"deploy"/"systemd"
     service=(root/"freequant-stock-observer.service").read_text()
     timer=(root/"freequant-stock-observer.timer").read_text()
-    assert service.count("ExecStart=")==3
+    assert service.count("ExecStart=")==4
+    assert "quantlab.stock_long_history --audit" in service
     assert "quantlab.stock_evidence_quality" in service
     assert "quality_reports" in service
     assert "stock_daily_observer --capture" in service

@@ -25,7 +25,8 @@ from .stock_daily_observer import DEFAULT_DB, PROVIDER, UNIVERSE
 # Exchange calendar packages may not incorporate last-minute Korean holidays.
 # This exception is public but we do NOT certify a full official KRX calendar.
 KNOWN_2026_KRX_REFERENCE_EXCEPTIONS={
-    "2026-07-17": "2026 Constitution Day market-closure notice; exchange calendar library may lag"
+    "2026-06-03": "KRX securities market closure on 2026 local-election day; library may lag",
+    "2026-07-17": "2026 Constitution Day market-closure notice; exchange calendar library may lag",
 }
 REQUIRED_QLIB_DAILY_SESSIONS=662  # existing cross_market START_TRAIN=600+60+2
 
@@ -226,6 +227,52 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
         result["unresolved_issues"].append("IMMUTABLE_VENDOR_REVISIONS_TO_RECONCILE")
     if total_failures:
         result["unresolved_issues"].append("PROVIDER_FETCH_FAILURES_TO_REVIEW")
+    # Long history is separate and immutable; never allow 3-month daily
+    # observation coverage to conceal its presence OR claim that enough
+    # bars alone makes the data approved for live/paper Qlib.
+    long_path=path.with_name("history.sqlite3")
+    if long_path.exists():
+        from .stock_long_history import audit_history
+        evidence=audit_history(long_path)
+        result["independent_long_history"]={
+            "status":evidence["status"],
+            "all_six_662_session_price_lengths_met":
+                evidence["all_6_assets_have_sufficient_price_history_length"],
+            "all_raw_payload_SHA256_verified":
+                evidence["sha256_all_history_source_payloads_verified"],
+            "material_conflicts":evidence["material_price_or_adjustment_conflicts"],
+            "vendor_adjustment_rounding_jitter_kept":
+                evidence["retained_vendor_adjustment_precision_jitter_events"],
+            "official_dividend_split_and_ETF_distribution_not_verified":True,
+        }
+        for market,tickers in UNIVERSE.items():
+            for ticker in tickers:
+                current=result["markets"][market][ticker]
+                history=evidence["markets"][market][ticker]
+                current["independent_long_vendor_sessions"]=history[
+                    "completed_vendor_daily_sessions"]
+                current["long_vendor_history_length_662_met"]=history[
+                    "historical_length_threshold_662_met"]
+                current["long_history_reference_gaps_not_explained"]=history[
+                    "unknown_reference_calendar_missing_sessions"]
+                current["long_history_known_2026_KRX_closures"]=history[
+                    "known_exchange_closure_missing_in_library"]
+                if history["historical_length_threshold_662_met"]:
+                    if "QLIB_MINIMUM_HISTORICAL_TRAIN_SESSIONS_NOT_MET" in current["blocks"]:
+                        current["blocks"].remove(
+                            "QLIB_MINIMUM_HISTORICAL_TRAIN_SESSIONS_NOT_MET")
+                    current["blocks"].append(
+                        "LONG_PRICE_HISTORY_AVAILABLE_BUT_UNVERIFIED_FOR_TOTAL_RETURN")
+        if evidence["all_6_assets_have_sufficient_price_history_length"]:
+            result["unresolved_issues"].remove(
+                "NO_CAUSAL_662_SESSION_STOCK_MODEL_HISTORY")
+            result["unresolved_issues"].append(
+                "LONG_VENDOR_PRICE_HISTORY_EXISTS_BUT_NO_CAUSAL_FROZEN_STOCK_QLIB_MODEL")
+        if evidence["material_price_or_adjustment_conflicts"]:
+            result["unresolved_issues"].append(
+                "LONG_VENDOR_PRICE_OR_ADJUSTMENT_CONFLICTS_REQUIRE_REVIEW")
+        if not evidence["sha256_all_history_source_payloads_verified"]:
+            raise ValueError("Long stock evidence raw SHA256 integrity failure")
     return result
 
 

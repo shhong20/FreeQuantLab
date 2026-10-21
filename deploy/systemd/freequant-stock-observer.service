@@ -8,6 +8,7 @@ Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_daily_observer --capture --db /home/hong/apps/FreeQuantLab/state/stock_daily/observations.sqlite3
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_daily_observer --audit --db /home/hong/apps/FreeQuantLab/state/stock_daily/observations.sqlite3
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_long_history --audit --db /home/hong/apps/FreeQuantLab/state/stock_daily/history.sqlite3
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.stock_evidence_quality --db /home/hong/apps/FreeQuantLab/state/stock_daily/observations.sqlite3 --receipt-dir /home/hong/apps/FreeQuantLab/state/stock_daily/quality_reports
 TimeoutStartSec=155
 UMask=0077
