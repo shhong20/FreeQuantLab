@@ -75,15 +75,25 @@ def _validate_paths(source:Path,dest:Path,*,require_other_mount:bool)->None:
 def mirror(
     *, source_root:str|Path,dest_root:str|Path,
     max_segments:int=MAX_COPY_SEGMENTS,require_other_mount:bool=True,
+    use_verified_source_checkpoint:bool=False,
 )->dict:
     if type(max_segments) is not int or not 1<=max_segments<=MAX_COPY_SEGMENTS:
         raise ValueError("Invalid bounded mirror batch size")
     source=Path(source_root).resolve()
     dest=Path(dest_root).absolute()
     _validate_paths(source,dest,require_other_mount=require_other_mount)
-    # Source-side full restoration verifies inner frame SHA, original causal
-    # links and source manifest/payload chain before copy is authorized.
-    source_proof=verify_chain(source)
+    # The default is full source reconstruction. The opt-in checkpoint path
+    # only skips it if that precise source prefix was ALREADY reconstructed
+    # and today's compressed manifest/hash chain still matches the witness.
+    # The DESTINATION is always fully rebuilt even on the optimized path.
+    if use_verified_source_checkpoint:
+        from .websocket_archive_checkpoint import audit_checkpoint
+        checkpoint=audit_checkpoint(source,max_unverified_segments=0)
+        if not checkpoint.get("within_unverified_suffix_limit"):
+            raise ValueError("Missing or stale fully verified source checkpoint")
+        source_proof=None
+    else:
+        source_proof=verify_chain(source)
     paths,docs=_read_chain(source)
     if not dest.exists():
         dest.mkdir(mode=0o700,parents=False)
@@ -122,12 +132,16 @@ def mirror(
         # Full raw JSON, FK and temporal link verification, not file-level
         # hashes only. No writes to either originating live database.
         mirror_proof=verify_chain(dest)
-        if {k:mirror_proof[k] for k in (
-            "segments","sessions","frames","books","trades","prior_book_trade_links",
-        )}!={k:source_proof[k] for k in (
-            "segments","sessions","frames","books","trades","prior_book_trade_links",
-        )} and len(_read_chain(dest)[0])==len(paths):
-            raise ValueError("Complete mirrored restore differs from original")
+        if len(_read_chain(dest)[0])==len(paths):
+            if source_proof is not None:
+                if any(mirror_proof[k]!=source_proof[k] for k in (
+                    "segments","sessions","frames","books","trades",
+                    "prior_book_trade_links",
+                )):
+                    raise ValueError("Complete mirrored restore differs from original")
+            elif (mirror_proof["sessions"]!=sum(x["sessions"] for x in docs)
+                  or mirror_proof["frames"]!=sum(x["frames"] for x in docs)):
+                raise ValueError("Checkpoint source metadata differs from mirror recovery")
         sealed=verify_seals(dest)
         return {
             "status":("SEPARATE_MOUNT_MIRROR_RESTORED_AND_VERIFIED"
@@ -146,6 +160,8 @@ def mirror(
             "directory_fsync_supported":durable,
             "original_archives_unchanged":True,
             "live_database_unchanged":True,
+            "source_full_restore_skipped_using_checkpoint":use_verified_source_checkpoint,
+            "destination_full_restore_performed":True,
             "automatic_sync_enabled":False,
             "real_orders_enabled":False,
         }
@@ -156,6 +172,8 @@ def main(argv=None)->int:
     parser.add_argument("--source",default="/home/hong/apps/FreeQuantLab/state/microstructure/incremental")
     parser.add_argument("--dest",default="/mnt/d/FreeQuantLab-Backups/websocket-incremental")
     parser.add_argument("--max-segments",type=int,default=MAX_COPY_SEGMENTS)
+    parser.add_argument("--use-verified-source-checkpoint",action="store_true",
+                        help="Opt-in: skip DUPLICATE source restore ONLY with fresh full checkpoint; destination always fully restored")
     parser.add_argument("--audit-seals",action="store_true")
     parser.add_argument("--verify-mirror",action="store_true")
     args=parser.parse_args(argv)
@@ -168,7 +186,8 @@ def main(argv=None)->int:
         if not destination.parent.is_dir():
             raise FileNotFoundError("Mirror parent must be explicitly provisioned")
         result=mirror(source_root=args.source,dest_root=args.dest,
-                      max_segments=args.max_segments)
+                      max_segments=args.max_segments,
+                      use_verified_source_checkpoint=args.use_verified_source_checkpoint)
     print(json.dumps(result,ensure_ascii=False))
     return 0
 
