@@ -1,0 +1,21 @@
+[Unit]
+Description=FreeQuantLab bounded WSL-to-D public websocket incremental backup (no deletion)
+Documentation=https://github.com/shhong20/FreeQuantLab
+After=freequant-websocket.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.websocket_backup_cycle --run
+TimeoutStartSec=300
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state/microstructure /mnt/d/FreeQuantLab-Backups
+StandardOutput=journal
+StandardError=journal
