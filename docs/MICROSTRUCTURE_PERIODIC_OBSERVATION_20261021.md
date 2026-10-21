@@ -22,7 +22,7 @@
 
 ## 10분 간격 배포
 
-운영 실서버는 현 WSL. user systemd timer는 10분마다 **KST/UTC 분 00,10,20,30,40,50의 :30초**, 정확히 한 번 수집 시도한다. `OnStartupSec=90s`와 `Persistent=true`로 **WSL이 다시 시작한 뒤 수집을 재개**하지만, PC가 꺼져 있는 사이의 Level 2 호가 데이터는 백필 불가능하다. Windows 자체가 꺼져 있다면 아무 서비스도 돌지 않는다는 제한도 동일하다.
+운영 실서버는 현 WSL. `/home/hong/apps/FreeQuantLab-observer-runtime` 운영용 독립 detached Git worktree에서 코드를 읽는다. 기능 개발 브랜치의 worktree 제거와 별도로 생존한다. 배포 후 이 pinned HEAD가 일치하는지 확인한다. user systemd timer는 10분마다 **KST/UTC 분 00,10,20,30,40,50의 :30초**, 정확히 한 번 수집 시도한다. `OnStartupSec=90s`와 `Persistent=true`로 **WSL이 다시 시작한 뒤 수집을 재개**하지만, PC가 꺼져 있는 사이의 Level 2 호가 데이터는 백필 불가능하다. Windows 자체가 꺼져 있다면 아무 서비스도 돌지 않는다는 제한도 동일하다.
 
 - `deploy/systemd/freequant-microstructure.service`: `flock -n` 중복 프로세스 방지, `NoNewPrivileges`, user 서비스, 엄격한 파일시스템 보호, 전용 상태 경로만 쓰기.
 - `deploy/systemd/freequant-microstructure.timer`: 매 10분 + 시작 후 재개.
@@ -36,7 +36,7 @@ systemctl --user status freequant-microstructure.timer freequant-microstructure-
 systemctl --user list-timers '*microstructure*'
 journalctl --user -u freequant-microstructure.service -n 25 --no-pager
 journalctl --user -u freequant-microstructure-audit.service -n 25 --no-pager
-cd /home/hong/apps/FreeQuantLab-microstructure-20261021
+cd /home/hong/apps/FreeQuantLab-observer-runtime
 PYTHONPATH=. /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer \
   --audit --require-fresh-seconds 1800 \
   --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
@@ -52,7 +52,7 @@ PYTHONPATH=. /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstru
 ## 배포/재현 참고
 
 ```bash
-cd /home/hong/apps/FreeQuantLab-microstructure-20261021
+cd /home/hong/apps/FreeQuantLab-observer-runtime
 PYTHONPATH=. /home/hong/apps/FreeQuantLab/.venv/bin/python -m pytest -q
 # 새 슬롯 한 건 read-only 조회 (기존 슬롯이면 idempotent)
 PYTHONPATH=. /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer \

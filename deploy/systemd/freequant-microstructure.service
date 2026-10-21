@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/hong/apps/FreeQuantLab-microstructure-20261021
+WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
 ExecStart=/usr/bin/flock -n /home/hong/apps/FreeQuantLab/state/microstructure/.collector.lock /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.microstructure_observer --db /home/hong/apps/FreeQuantLab/state/microstructure/observations.sqlite3
 TimeoutStartSec=55
 Environment=PYTHONDONTWRITEBYTECODE=1
