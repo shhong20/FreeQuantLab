@@ -92,3 +92,32 @@ def test_real_qlib_training_ignores_future_prices_and_labels(tmp_path):
     changed=qlib_probabilities(mutated,600,tmp_path/"qlib_model_check")
     np.testing.assert_allclose(raw[590:600],changed[590:600],rtol=0,atol=1e-12)
     assert np.isfinite(raw[600:720]).all()
+
+
+def test_probability_regime_and_cost_diagnostics_do_not_change_trading_policy():
+    result=analyze(sample(),state_dir="unused",max_folds=2,
+                   predictor=fake_model,block_repetitions=100)
+    diagnostics=result["failure_diagnostics"]
+    prediction=diagnostics["prediction"]
+    assert prediction["observations"]==240
+    assert sum(b["observations"] for b in prediction["calibration_bins"])==240
+    assert all(r["scores"]["observations"]==120 for r in diagnostics["prediction_by_fold"])
+    assert diagnostics["disclosures"]["no_OOS_model_or_threshold_selection"]
+    assert diagnostics["disclosures"]["no_probability_recalibration_fitted"]
+    for row in diagnostics["cost_attribution"]:
+        assert row["log_growth_lost_from_0_to_15bps"] >= 0
+        assert row["additional_log_growth_lost_from_15_to_60bps"] >= 0
+        main=next(r for r in result["summary"] if r["name"]==row["name"] and r["cost_bps"]==15)
+        assert row["cost_15bps_compounded_return"]==pytest.approx(
+            main["compounded_isolated_fold_return"]
+        )
+        assert row["total_virtual_orders"]==main["simulated_orders"]
+    for name in (BASELINE,HYSTERESIS):
+        total_log=next(r["log_excess_vs_20pct_buy_hold"]
+                       for r in result["summary"] if r["name"]==name and r["cost_bps"]==15)
+        attribution=diagnostics["paired_regime_attribution_15bps"][name]
+        for axis in ("direction","volatility"):
+            assert sum(x["days"] for x in attribution[axis].values())==240
+            assert sum(x["sum_log_excess_vs_buy_hold"]
+                       for x in attribution[axis].values())==pytest.approx(total_log)
+    assert result["automatic_strategy_promotion"] is False

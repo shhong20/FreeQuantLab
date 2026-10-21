@@ -27,6 +27,10 @@ from .historical_stress import (
     MIN_FINAL_FOLD_BARS, compare_frozen_archive, verify_input,
 )
 from .qlib_bridge import qlib_probabilities
+from .qlib_failure_diagnostics import (
+    outcomes, probabilities_summary, paired_regime_excess, aggregate_regimes,
+)
+from .diagnostics import trailing_regimes
 from .settings import Settings
 
 BENCHMARK = "buy_hold_20pct"
@@ -77,6 +81,12 @@ def analyze(
     records: list[dict] = []
     groups: list[dict[str,np.ndarray]] = []
     training_evidence = []
+    prediction_chunks = []
+    realized_chunks = []
+    probability_folds = []
+    regime_folds = []
+    cost_free_records = []
+    regime_tags = trailing_regimes(df)
     fold_id = 0
     start = INITIAL_TRAIN_BARS
     while start + MIN_FINAL_FOLD_BARS <= n - 2:
@@ -90,9 +100,28 @@ def analyze(
         if len(probs) != n:
             raise ValueError("Qlib predictor returned unexpected probability length")
         selected = fixed_policies(probs, start, end)
+        forward_returns = outcomes(df, start, end)
+        prediction_chunks.append(probs[start:end].copy())
+        realized_chunks.append(forward_returns)
+        probability_folds.append({
+            "fold": fold_id,
+            "first_utc": df["date"].iloc[start].date().isoformat(),
+            "last_utc": df["date"].iloc[end-1].date().isoformat(),
+            "scores": probabilities_summary(probs[start:end], forward_returns),
+        })
         selected[BENCHMARK] = np.ones(n, dtype=float)
         paths: dict[str,np.ndarray] = {}
         for name, signal in selected.items():
+            cost_free=simulate(
+                df, signal, start, end,
+                replace(settings,fee_bps=0.,slippage_bps=0.),
+                annual_periods=365,
+            )
+            cost_free_records.append({
+                "fold":fold_id,"name":name,
+                "zero_cost_total_return":cost_free["total_return"],
+                "orders":cost_free["orders"],
+            })
             for cost in COST_BPS:
                 scenario = replace(settings, fee_bps=10., slippage_bps=float(cost - 10))
                 stats = simulate(df, signal, start, end, scenario, annual_periods=365)
@@ -115,6 +144,9 @@ def analyze(
                     "active_days":stats["active_days"],
                 })
         groups.append(paths)
+        regime_folds.append(paired_regime_excess(
+            df,start,end,paths,BENCHMARK,regimes=regime_tags,
+        ))
         training_evidence.append({
             "fold":fold_id,
             "fit_end_exclusive_index":start,
@@ -154,6 +186,30 @@ def analyze(
         groups,benchmark=BENCHMARK,candidates=[BASELINE,HYSTERESIS],
         repetitions=block_repetitions,seed=73,
     )
+    cost_attribution=[]
+    for strategy in (BENCHMARK,BASELINE,HYSTERESIS):
+        gross=sum(np.log1p(r["zero_cost_total_return"])
+                  for r in cost_free_records if r["name"]==strategy)
+        log_by_cost={
+            cost:sum(np.log1p(r["total_return"]) for r in records
+                     if r["name"]==strategy and r["cost_bps_per_side"]==cost)
+            for cost in COST_BPS
+        }
+        cost_attribution.append({
+            "name":strategy,
+            "gross_zero_cost_compounded_return":float(np.expm1(gross)),
+            "cost_15bps_compounded_return":float(np.expm1(log_by_cost[15])),
+            "cost_60bps_compounded_return":float(np.expm1(log_by_cost[60])),
+            "log_growth_lost_from_0_to_15bps":float(gross-log_by_cost[15]),
+            "additional_log_growth_lost_from_15_to_60bps":float(
+                log_by_cost[15]-log_by_cost[60]
+            ),
+            "total_virtual_orders":sum(r["orders"] for r in cost_free_records
+                                       if r["name"]==strategy),
+        })
+    calibrated=probabilities_summary(
+        np.concatenate(prediction_chunks),np.concatenate(realized_chunks),
+    )
     return {
         "status":"EXPLORATORY_NO_CONFIRMED_ALPHA",
         "engine":"qlib.contrib.model.gbdt.LGBModel",
@@ -180,6 +236,20 @@ def analyze(
         "training_boundaries":training_evidence,
         "fold_rows":records,
         "summary":summary,
+        "failure_diagnostics":{
+            "prediction":calibrated,
+            "prediction_by_fold":probability_folds,
+            "paired_regime_attribution_15bps":aggregate_regimes(regime_folds),
+            "cost_attribution":cost_attribution,
+            "disclosures":{
+                "posterior_diagnostics_only":True,
+                "no_OOS_model_or_threshold_selection":True,
+                "no_probability_recalibration_fitted":True,
+                "regimes_based_only_on_trailing_completed_candles":True,
+                "cost_effect_is_simulated_not_actual_fill_slippage":True,
+                "historical_data_reused_not_fresh_holdout":True,
+            },
+        },
         "exploratory_multiple_testing":sensitivity,
         "real_orders_enabled":False,
         "automatic_strategy_promotion":False,
