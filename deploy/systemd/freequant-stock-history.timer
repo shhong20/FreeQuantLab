@@ -1,0 +1,13 @@
+[Unit]
+Description=FreeQuantLab weekly immutable Korean/US stock 5y public vendor refresh
+
+[Timer]
+# Saturday KST after US Friday close; catch up missed weekly run after user systemd starts.
+# Existing bars and unmodified original payloads are never deleted or rewritten.
+OnCalendar=Sat *-*-* 11:40:00
+Persistent=true
+AccuracySec=2min
+Unit=freequant-stock-history.service
+
+[Install]
+WantedBy=timers.target
