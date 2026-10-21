@@ -161,7 +161,7 @@ def inspect_protocol(
             (first.isoformat(),last.isoformat()),
         ).fetchall()
         prior=con.execute(
-            "SELECT track_id,decision_date,equity FROM shadow_events "
+            "SELECT track_id,decision_date,equity,action FROM shadow_events "
             "WHERE decision_date < ? ORDER BY track_id,decision_date",
             (first.isoformat(),),
         ).fetchall()
@@ -171,15 +171,20 @@ def inspect_protocol(
     for expected in frozen["account_set"]:
         if _hash_track(live[expected["track_id"]])!=expected["spec_and_account_sha256"]:
             raise ProtocolError("Account strategy/config changed since locking")
+    prewindow_events=len(prior)
+    prewindow_orders=sum(row["action"] in ("BUY","SELL") for row in prior)
     if current<opening:
         return {
-            "status":"LOCKED_UNTIL_FUTURE_CUTOFF",
+            "status":"LOCKED_PRE_WINDOW_ACTIVITY_REVIEW" if prior else "LOCKED_UNTIL_FUTURE_CUTOFF",
             "protocol_sha256":frozen["sha256"],
             "first_eligible_decision_utc":first.isoformat(),
             "last_eligible_decision_utc":last.isoformat(),
             "evaluation_not_before_utc":opening.isoformat(),
             "days_until_evaluation":max(1,(opening.date()-current.date()).days),
             "observed_strategy_returns":None,
+            "prewindow_virtual_events":prewindow_events,
+            "prewindow_virtual_orders":prewindow_orders,
+            "opening_inventory_requires_manual_review":bool(prewindow_orders),
             "real_orders_enabled":False,"eligible_for_promotion":False,
         }
     by_track={x["track_id"]:[] for x in frozen["account_set"]}
@@ -221,11 +226,15 @@ def inspect_protocol(
         item["research_review_only"] = True
     incomplete=any(not x["complete_observations"] or x["risk_halted"] for x in evaluations)
     return {
-        "status":"INCOMPLETE_OR_HALTED" if incomplete else "OBSERVED_FOR_MANUAL_REVIEW",
+        "status":"PREWINDOW_VIRTUAL_EXPOSURE_REVIEW" if prewindow_orders else
+                 "INCOMPLETE_OR_HALTED" if incomplete else "OBSERVED_FOR_MANUAL_REVIEW",
         "protocol_sha256":frozen["sha256"],
         "strategies":evaluations,
         "observation_window":[first.isoformat(),last.isoformat()],
         "blinded_holdout":False,
+        "prewindow_virtual_events":prewindow_events,
+        "prewindow_virtual_orders":prewindow_orders,
+        "opening_inventory_requires_manual_review":bool(prewindow_orders),
         "confirmatory_inference_valid":False,
         "real_orders_enabled":False,"eligible_for_promotion":False,
         "warning":"Prior research and publicly monitored interim performance prevent claiming independent blinded alpha proof.",

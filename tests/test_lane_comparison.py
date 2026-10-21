@@ -213,3 +213,23 @@ def test_complete_events_without_saved_public_quote_not_comparable(rig):
     x=compare(rig,END)
     assert x["net_return_by_strategy"] is None
     assert "MISSING_OR_CONTRADICTORY_PUBLIC_QUOTE" in x["issues"]
+
+
+def test_original_lanes_early_real_time_virtual_inventory_blocks_descriptive_comparison(rig):
+    from quantlab.shadow import run_cycle
+    source=bars("2026-10-20")
+    quote=float(source["close"].iloc[-1])
+    early=run_cycle(rig[0],ASSETS,now=datetime(2026,10,21,0,18,tzinfo=timezone.utc),
+                    fetch_fn=lambda _:source.copy(),
+                    quote_fn=lambda p,s,*,now:(quote,now.date().isoformat()),
+                    protocol_path=None)
+    assert early["status"]=="OK",early["errors"]
+    assert len([e for e in early["results"] if e["status"]=="RECORDED"])==6
+    pre_cutoff=compare(rig,datetime(2026,10,22,0,30,tzinfo=timezone.utc))
+    assert pre_cutoff["status"]=="INTEGRITY_REVIEW_REQUIRED"
+    assert "FROZEN_90D_PRE_WINDOW_EXPOSURE_REVIEW_REQUIRED" in pre_cutoff["issues"]
+    assert pre_cutoff["net_return_by_strategy"] is None
+    after_cutoff=compare(rig,END)
+    assert after_cutoff["status"]=="INTEGRITY_REVIEW_REQUIRED"
+    assert after_cutoff["net_return_by_strategy"] is None
+    assert not after_cutoff["automatic_strategy_promotion"]

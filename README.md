@@ -328,3 +328,12 @@ Note: on 2026-10-21 KST the *original* 90-day paper runner recorded six virtual 
 ### Dashboard SQLite WAL read-only regression guard (2026-10-21)
 
 After the first genuine BTC/ETH simulated account observations, SQLite checkpointed and removed its transient `-wal`/`-shm` sidecars. The dashboard systemd unit's filesystem-wide `ReadOnlyPaths=state` made SQLite `mode=ro` unable to recreate the shared-memory sidecar, causing dashboard `/healthz` and `/api/status` to disconnect even though all three databases were intact. The unit now grants **only the state directory** SQLite sidecar write access (`ReadWritePaths=state`) while retaining `ProtectSystem=strict`, `ProtectHome=read-only`, and the Python `mode=ro` / `PRAGMA query_only=ON` guards. HTTP mutation routes remain rejected; no live broker support. WSL live API smoke checks confirmed all six status endpoints returned HTTP 200 after service restart.
+
+
+## Original preregistered 90-day paper cohort: pre-window virtual exposure detected (2026-10-21)
+
+Read-only forensic audit found **6 original virtual observations dated 2026-10-20 UTC (4 BUY)**, one day before the locked scoring window **2026-10-21..2027-01-18 UTC**. These real-time *hypothetical* public-ticker fills were committed by the baseline scheduled runner and are **not** historical OHLCV backfills. The frozen account rows, position inventory, and all historical transactions are preserved.
+
+The original baseline executor now refuses new out-of-window virtual ticks when a frozen protocol is supplied, saving only a skip audit record. The prospective read-only status, collection coverage and Watchdog flag `PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY`; the 90-day outcome stays locked and is explicitly marked for opening-inventory review. Cross-lane 90-day return tables are **blocked**, even after the future cutoff, until a separately documented/manual research decision. Nothing resets or secretly realigns the original cohort.
+
+[Pre-window incident, auditor evidence, model comparison exclusion and safe new-cohort options](docs/PREWINDOW_FROZEN_EVALUATION_REVIEW.md).

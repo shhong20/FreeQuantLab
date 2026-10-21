@@ -269,11 +269,22 @@ def check(
                     "PROTOCOL_IDENTITY_OR_LEDGER_FAILED",
                     "Forward protocol account identity or ledger verification failed."))
             elif compliance["status"] == "BREACH_OR_MISSING":
-                alerts.append({
-                    "severity": "warning",
-                    "code": "PROTOCOL_DUE_OBSERVATIONS_MISSING",
-                    "message": "Due forward UTC observations missing or inconsistent. No backfill is allowed.",
-                })
+                observed_issues={x["code"] for x in compliance.get("issues",[])}
+                if "PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY" in observed_issues:
+                    alerts.append({
+                        "severity":"warning",
+                        "code":"PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY",
+                        "message":"Original 90-day virtual ledger contains real-time "
+                                  "simulated positions recorded before its locked "
+                                  "evaluation start. Preserve and review opening "
+                                  "inventory; never silently count as 90-day alpha.",
+                    })
+                if observed_issues-{"PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY"}:
+                    alerts.append({
+                        "severity": "warning",
+                        "code": "PROTOCOL_DUE_OBSERVATIONS_MISSING",
+                        "message": "Due forward UTC observations missing or inconsistent. No backfill is allowed.",
+                    })
         except (ValueError, RuntimeError, OSError, sqlite3.Error, KeyError) as exc:
             state = "DEGRADED"
             compliance = {"status":"UNAVAILABLE", "real_orders_enabled":False}
