@@ -141,3 +141,34 @@ def test_report_is_atomic_stores_only_readonly_evidence(tmp_path,setup):
     assert recorded["status"]=="INCOMPLETE"
     assert recorded["original_90d_returns"] is None
     assert path.stat().st_mode&0o077==0
+
+
+def test_prior_missing_or_tampered_day_detected_even_when_latest_day_is_complete(setup):
+    paths, check = setup
+    for day in ("2026-10-20", "2026-10-21", "2026-10-22"):
+        session = (datetime.fromisoformat(day) + timedelta(days=1)).date().isoformat()
+        put_day(paths["exaone"], day, session + "T00:18:00+00:00", strategy_count=1)
+        put_day(paths["qlib"], day, session + "T00:21:00+00:00", strategy_count=1)
+        if day != "2026-10-20":
+            put_day(paths["original_90d"], day, session + "T00:15:00+00:00",
+                    strategy_count=3)
+    t23 = datetime(2026, 10, 23, 1, 45, tzinfo=timezone.utc)
+    clean = check(t23)
+    assert clean["status"] == "PASS", clean["issues"]
+    assert [x["due_history"]["expected_account_days"] for x in clean["lanes"]] == [12, 6, 6]
+    assert all(x["due_history"]["missing_account_days"] == 0 for x in clean["lanes"])
+    with sqlite3.connect(paths["qlib"]) as con:
+        con.execute("DELETE FROM shadow_events WHERE decision_date='2026-10-21' "
+                    "AND track_id LIKE '%KRW-BTC%'")
+    with sqlite3.connect(paths["exaone"]) as con:
+        con.execute("UPDATE shadow_events SET observed_price=123.0 "
+                    "WHERE decision_date='2026-10-20' AND track_id LIKE '%KRW-ETH%'")
+    result = check(t23)
+    assert result["status"] == "INCOMPLETE"
+    assert "qlib:HISTORICAL_VIRTUAL_OBSERVATIONS_MISSING" in result["issues"]
+    assert "exaone:HISTORICAL_VIRTUAL_EVIDENCE_INVALID" in result["issues"]
+    assert result["lanes"][2]["due_history"]["first_missing_utc_decision"] == "2026-10-21"
+    assert result["lanes"][1]["due_history"]["first_invalid_utc_decision"] == "2026-10-20"
+    assert all(x["due_date_evidence"][0]["recorded_events"] > 0 for x in result["lanes"])
+    assert result["original_90d_returns"] is None
+    assert result["real_orders_enabled"] is False

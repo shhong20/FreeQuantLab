@@ -58,3 +58,7 @@ The daily snapshot is `reports/daily-receipts/YYYY-MM-DD.json` (KST local date),
 - Verifying all required daily event records and model replay does not imply the strategy is profitable or statistically significant.
 - Keeping a Windows/WSL machine online is necessary for timed checks; a Windows shutdown suppresses even systemd `Persistent=true` until WSL starts again.
 - No automatic model promotion, live brokerage access, strategy retraining, or synthetic reconstruction of missed trades.
+
+## Cumulative due-day audit (2026-10-21 update)
+
+The receipt now checks **every due UTC decision day** from each lane's immutable start through its latest due decision, for every registered account. In addition to the latest-day evidence, `lanes[].due_history` reports expected/observed/missing account-days, invalid quote or timestamp evidence, and the first affected UTC decision. A late reboot cannot make an older missing virtual day pass simply because the newest day was collected. `HISTORICAL_VIRTUAL_OBSERVATIONS_MISSING` or `HISTORICAL_VIRTUAL_EVIDENCE_INVALID` causes operational `INCOMPLETE`; no historical fills are synthesized. This is separate from the legacy original cohort's permanently disclosed `PREWINDOW_REVIEW_REQUIRED` research-integrity status. Tests cover a three-day run with a middle-day missing event and earlier corrupted price, while the newest day remains fully present.

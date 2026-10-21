@@ -138,7 +138,62 @@ def inspect_receipt(
                     "public_quote_saved":matching is not None,
                     "observation_time_valid":not invalid_time,
                 })
+        # The newest successful candle is not proof that every earlier
+        # registered decision day was observed. A powered-off WSL host may
+        # resume tomorrow; historical public candles must NEVER be turned
+        # into invented paper fills. Check the whole due prefix read-only.
+        history = {
+            "expected_account_days": 0,
+            "observed_account_days": 0,
+            "missing_account_days": 0,
+            "invalid_evidence_account_days": 0,
+            "first_missing_utc_decision": None,
+            "first_invalid_utc_decision": None,
+        }
+        if due is not None:
+            by_event = {(r["track_id"], r["decision_date"]): r for r in records}
+            for offset in range((due - first).days + 1):
+                day = first + timedelta(days=offset)
+                decision = day.isoformat()
+                session = (day + timedelta(days=1)).isoformat()
+                for symbol in ASSETS:
+                    saved_quote = by_quote.get((symbol, decision))
+                    for track_id in ids_by_asset[symbol]:
+                        history["expected_account_days"] += 1
+                        event = by_event.get((track_id, decision))
+                        if event is None:
+                            history["missing_account_days"] += 1
+                            if history["first_missing_utc_decision"] is None:
+                                history["first_missing_utc_decision"] = decision
+                            continue
+                        history["observed_account_days"] += 1
+                        valid = event["session_date"] == session
+                        try:
+                            stamped = datetime.fromisoformat(event["created_at"])
+                            valid = valid and stamped.tzinfo is not None
+                            if stamped.tzinfo is not None:
+                                stamped = stamped.astimezone(timezone.utc)
+                                valid = valid and stamped.date().isoformat() == session
+                                valid = valid and (0, 10) <= (stamped.hour, stamped.minute) < (1, 20)
+                            valid = valid and saved_quote is not None
+                            if saved_quote is not None:
+                                valid = valid and math.isclose(
+                                    float(event["observed_price"]),
+                                    float(saved_quote["public_ticker_price"]),
+                                    rel_tol=1e-10, abs_tol=1e-7,
+                                )
+                        except (TypeError, ValueError, OverflowError):
+                            valid = False
+                        if not valid:
+                            history["invalid_evidence_account_days"] += 1
+                            if history["first_invalid_utc_decision"] is None:
+                                history["first_invalid_utc_decision"] = decision
+            if history["missing_account_days"]:
+                issues.append(name + ":HISTORICAL_VIRTUAL_OBSERVATIONS_MISSING")
+            if history["invalid_evidence_account_days"]:
+                issues.append(name + ":HISTORICAL_VIRTUAL_EVIDENCE_INVALID")
         results.append({
+            "due_history":history,
             "lane":name,"status":"PASS" if due_day and not any(
                 x.startswith(name+":") for x in issues
             ) else "WAITING_FIRST_DUE" if due_day is None else "REVIEW_REQUIRED",
