@@ -1,0 +1,19 @@
+[Unit]
+Description=FreeQuantLab bounded PUBLIC Upbit WebSocket L2+tape sample (no orders)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
+ExecStart=/usr/bin/flock -n /home/hong/apps/FreeQuantLab/state/microstructure/.websocket.lock /home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.websocket_microstructure --db /home/hong/apps/FreeQuantLab/state/microstructure/websocket.sqlite3 --seconds 30
+TimeoutStartSec=75
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state/microstructure
+StandardOutput=journal
+StandardError=journal
