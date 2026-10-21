@@ -230,5 +230,6 @@ def test_public_websocket_service_is_bounded_and_independent():
     assert "ProtectSystem=strict" in x and "NoNewPrivileges=true" in x
     assert "OnCalendar=*-*-* *:2/10:00" in y
     assert "Persistent=true" in y
-    assert "--audit --require-recent-seconds 2400" in z
+    assert "--audit --audit-hours 2 --require-recent-seconds 2400" in z
+    assert "websocket_quality --enforce" in z
     assert "freequant-shadow" not in x+y+z

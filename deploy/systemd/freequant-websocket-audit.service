@@ -4,8 +4,9 @@ Description=FreeQuantLab independent WebSocket evidence and freshness audit
 [Service]
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
-ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.websocket_microstructure --audit --require-recent-seconds 2400 --db /home/hong/apps/FreeQuantLab/state/microstructure/websocket.sqlite3
-TimeoutStartSec=60
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.websocket_microstructure --audit --audit-hours 2 --require-recent-seconds 2400 --db /home/hong/apps/FreeQuantLab/state/microstructure/websocket.sqlite3
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.websocket_quality --enforce --db /home/hong/apps/FreeQuantLab/state/microstructure/websocket.sqlite3
+TimeoutStartSec=90
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0077
 NoNewPrivileges=true

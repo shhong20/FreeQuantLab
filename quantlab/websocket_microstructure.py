@@ -355,9 +355,10 @@ def main(argv=None)->int:
     p.add_argument("--db",default="/home/hong/apps/FreeQuantLab/state/microstructure/websocket.sqlite3")
     p.add_argument("--seconds",type=int,default=20)
     p.add_argument("--audit",action="store_true")
+    p.add_argument("--audit-hours",type=int,default=48)
     p.add_argument("--require-recent-seconds",type=int,default=None)
     args=p.parse_args(argv)
-    result=audit(args.db,lookback_hours=48) if args.audit else capture(args.db,duration=args.seconds)
+    result=audit(args.db,lookback_hours=args.audit_hours) if args.audit else capture(args.db,duration=args.seconds)
     print(json.dumps(result,ensure_ascii=False))
     if result.get("status") in ("CAPTURE_FAILED","INSUFFICIENT_MARKET_TYPES","TRUNCATED_MAX_FRAMES"):
         return 2
