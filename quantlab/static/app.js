@@ -337,6 +337,29 @@ async function updateMarketArchive(){
     $("archive-market-summary").textContent="누락된 시장 데이터 상태를 확인할 수 없습니다.";
   }
 }
+async function updateDailyReceipt(){
+  try {
+    const response=await fetch("/api/daily-receipt",{cache:"no-store"});
+    if(!response.ok)throw new Error("Daily evidence receipt is missing or stale");
+    const d=await response.json();
+    const summary=(d.lanes||[]).map(x=>
+      x.lane+" "+x.status+" ("+x.due_date_evidence?.reduce(
+        (count,record)=>count+record.recorded_events,0)+"/"+
+      (x.due_date_evidence?.reduce((count,record)=>count+record.expected_events,0)||0)+")"
+    ).join(" · ");
+    $("daily-receipt-state").textContent=d.status==="PASS"?"일일 관측 PASS":
+      d.status==="WAITING_FIRST_DUE"?"관측 예정":"수집·검증 경고";
+    $("daily-receipt-summary").textContent=summary;
+    $("daily-receipt-note").textContent="검증 "+kst(d.captured_at_utc)+
+      " · Qlib 예측 재현 "+d.qlib_replay_status+
+      " · 원본 연구 "+d.research_integrity_status+
+      " · 실제 주문 및 과거 가상 체결 없음";
+  } catch(error){
+    $("daily-receipt-state").textContent="일일 검증 보고서 확인 필요";
+    $("daily-receipt-summary").textContent="보고서가 아직 없거나 오래됐습니다.";
+    $("daily-receipt-note").textContent="가상 거래가 정상 수집됐다고 추정하지 않습니다.";
+  }
+}
 async function reload(){
   const button=$("refresh");button.disabled=true;
   try{
@@ -348,7 +371,7 @@ async function reload(){
     $("connection").textContent="● 원장 조회 실패";$("connection").classList.add("error");
     $("head-status").textContent="모니터링 데이터 확인 필요";
     $("health-summary").textContent="읽기 전용 SQLite 원장에 접근하지 못했습니다. 서비스 및 파일 경로를 확인하세요.";
-  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage(),updateIsolatedWatchdog(),updateMarketArchive()]);}
+  }finally{button.disabled=false;await Promise.all([refreshReportsAndAlerts(),updateProspectiveProtocol(),updateQuoteQuality(),updateLaneCoverage(),updateIsolatedWatchdog(),updateMarketArchive(),updateDailyReceipt()]);}
 }
 document.querySelectorAll("[data-symbol]").forEach(b=>b.addEventListener("click",()=>{
   selected=b.dataset.symbol;

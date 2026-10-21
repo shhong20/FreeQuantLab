@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab read-only UTC day paper evidence acceptance (all 3 lanes)
+After=freequant-isolated-watchdog.service freequant-watchdog.service
+Wants=freequant-dashboard.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.daily_receipt --report-dir reports/daily-receipts
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/reports/daily-receipts /home/hong/apps/FreeQuantLab/state
+StandardOutput=journal
+StandardError=journal

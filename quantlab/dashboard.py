@@ -33,7 +33,8 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                  qlib_plan: str | Path = "protocols/2026-10-20-qlib-lab.json",
                  isolated_reports: str | Path = "reports/isolated",
                  isolated_alerts: str | Path = "state/isolated-watchdog-history.json",
-                 market_archive_db: str | Path = "state/market_history.db"):
+                 market_archive_db: str | Path = "state/market_history.db",
+                 daily_receipts: str | Path = "reports/daily-receipts"):
     """Dedicated handler factory used by tests and isolated service."""
     database = Path(db_path).resolve()
     daily_dir = Path(reports_dir).resolve()
@@ -46,6 +47,7 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
     isolated_reports_dir = Path(isolated_reports).resolve()
     isolated_alert_store = Path(isolated_alerts).resolve()
     market_archive_source = Path(market_archive_db).resolve()
+    receipt_dir = Path(daily_receipts).resolve()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         server_version = "FreeQuantLabMonitor/0.1"
@@ -89,6 +91,33 @@ def make_handler(db_path: str | Path, *, reports_dir: str | Path = "reports/forw
                             "application/json; charset=utf-8")
                 return
             path = urlsplit(self.path).path
+            if path == "/api/daily-receipt":
+                try:
+                    files = sorted(receipt_dir.glob("????-??-??.json"))
+                    if not files:
+                        self._reply(404, {"status":"not_yet_observed"},
+                                    "application/json; charset=utf-8")
+                    else:
+                        item=json.loads(files[-1].read_text(encoding="utf-8"))
+                        if (not isinstance(item,dict)
+                            or item.get("real_orders_enabled") is not False
+                            or item.get("original_90d_returns","invalid") is not None):
+                            raise ValueError("Invalid immutable forward daily receipt")
+                        captured=datetime.fromisoformat(item["captured_at_utc"])
+                        if captured.tzinfo is None:
+                            raise ValueError("Naive evidence report timestamp")
+                        age=datetime.now(timezone.utc)-captured.astimezone(timezone.utc)
+                        if age>timedelta(hours=28) or age<timedelta(minutes=-5):
+                            self._reply(503,{"status":"STALE_DAILY_RECEIPT",
+                                             "last_receipt_at_utc":captured.isoformat(),
+                                             "real_orders_enabled":False},
+                                        "application/json; charset=utf-8")
+                        else:
+                            self._reply(200,item,"application/json; charset=utf-8")
+                except (OSError,ValueError,KeyError,TypeError):
+                    self._reply(503,{"status":"unavailable"},
+                                "application/json; charset=utf-8")
+                return
             if path == "/api/market-archive":
                 try:
                     from .market_archive import audit_archive
