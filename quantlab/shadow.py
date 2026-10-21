@@ -329,7 +329,33 @@ def run_cycle(
             raise ValueError("Frozen Qlib accounts can run only under the isolated Qlib lab runner")
         if protocol_path is not None:
             from .protocol_compliance import verify_frozen_accounts
+            from .prospective import read_protocol
             verify_frozen_accounts(frozen, protocol_path, now=current)
+            registered=read_protocol(protocol_path)
+            latest_completed_day=(current.date()-timedelta(days=1)).isoformat()
+            if not (
+                registered["first_eligible_decision_utc"] <= latest_completed_day
+                <= registered["last_eligible_decision_utc"]
+            ):
+                # Do not fetch public ticker or simulate trades outside the
+                # exact SHA-locked scoring period. Existing old out-of-window
+                # events are kept intact and audited elsewhere.
+                skipped={
+                    "status":"OK","started_at_utc":current.isoformat(),
+                    "tracks":len(frozen),"results":[{
+                        "status":"OUTSIDE_PROTOCOL_WINDOW",
+                        "decision_date":latest_completed_day,
+                    }],
+                    "errors":[],"real_orders_enabled":False,
+                    "promotion_enabled":False,
+                }
+                # Persist skip evidence but NEVER fetch or modify positions.
+                with con:
+                    con.execute(
+                        "INSERT INTO shadow_runs(created_at,status,details_json) VALUES (?,?,?)",
+                        (current.isoformat(),"OK",json.dumps(skipped,sort_keys=True)),
+                    )
+                return skipped
         configured = {(a["provider"], a["symbol"]): a for a in assets}
         by_symbol: dict[tuple[str,str], list] = {}
         for row in frozen:

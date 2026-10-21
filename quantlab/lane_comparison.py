@@ -76,6 +76,13 @@ def compare_three_lanes(
     main=assess_collection(production_db,protocol_file,now=current)
     if main["status"] in ("INVALID_PROTOCOL_IDENTITY","INVALID_LEDGER","UNAVAILABLE"):
         issues.append("FROZEN_90D_IDENTITY_FAILED")
+    # A same-day comparison cannot treat already-open baseline inventory as
+    # if every track began flat at the registered evaluation start.
+    # The legacy 2026-10-20 BUYs are preserved but disqualify this cohort
+    # from a clean 90-day cross-lane claim until manually reviewed.
+    if any(item.get("code")=="PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY"
+           for item in main.get("issues",[])):
+        issues.append("FROZEN_90D_PRE_WINDOW_EXPOSURE_REVIEW_REQUIRED")
     try:
         _verify_registered(agent_db,agents)
         _verify_accounts(qlib_db,qplan)

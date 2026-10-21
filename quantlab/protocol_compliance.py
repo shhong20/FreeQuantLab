@@ -80,6 +80,11 @@ def assess_collection(
             "ORDER BY track_id,decision_date",
             (first.isoformat(), last.isoformat()),
         ).fetchall()
+        prewindow=con.execute(
+            "SELECT track_id,decision_date,action FROM shadow_events "
+            "WHERE decision_date<? ORDER BY track_id,decision_date",
+            (first.isoformat(),),
+        ).fetchall()
         con.execute("COMMIT")
     try:
         verified = verify_frozen_accounts(accounts, manifest, now=current)
@@ -95,6 +100,17 @@ def assess_collection(
     }
     by_id = {t["track_id"]: set() for t in plan["account_set"]}
     issues = []
+    if prewindow:
+        issues.append({
+            "code":"PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY",
+            "prewindow_events":len(prewindow),
+            "prewindow_virtual_orders":sum(
+                item["action"] in ("BUY","SELL") for item in prewindow
+            ),
+            "first_unexpected_decision_utc":min(
+                item["decision_date"] for item in prewindow
+            ),
+        })
     for e in events:
         day = date.fromisoformat(e["decision_date"])
         when = datetime.fromisoformat(e["created_at"])

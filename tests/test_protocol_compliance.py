@@ -230,3 +230,73 @@ def test_isolated_watchdog_state_does_not_replace_production_alert_snapshot(stud
     isolated=tmp_path/"watchdog-test-isolated-history.json"
     assert isolated.exists()
     assert output["inbox_snapshot"]==str(isolated)
+
+
+def test_locked_original_paper_does_not_execute_before_protocol_start(study):
+    """A closed bar before the registered window never causes a paper fill."""
+    db,manifest,_=study
+    skipped=run_cycle(
+        db,[ASSET],now=datetime(2026,10,21,0,18,tzinfo=timezone.utc),
+        fetch_fn=lambda _:pytest.fail("Historical market fetch not allowed here"),
+        quote_fn=lambda *a,**k:pytest.fail("Ticker quote not allowed here"),
+        protocol_path=manifest,
+    )
+    assert skipped["status"]=="OK"
+    assert skipped["results"][0]["status"]=="OUTSIDE_PROTOCOL_WINDOW"
+    assert skipped["results"][0]["decision_date"]=="2026-10-20"
+    with sqlite3.connect(db) as con:
+        assert con.execute("SELECT COUNT(*) FROM shadow_events").fetchone()[0]==0
+        assert con.execute("SELECT COUNT(*) FROM shadow_quote_evidence").fetchone()[0]==0
+        details=json.loads(con.execute(
+            "SELECT details_json FROM shadow_runs ORDER BY run_id DESC LIMIT 1"
+        ).fetchone()[0])
+        assert details["results"][0]["status"]=="OUTSIDE_PROTOCOL_WINDOW"
+
+
+def test_existing_prewindow_positions_preserved_but_lock_review_and_watchdog(study):
+    """Legacy early virtual BUY must be disclosed, never erased/backfilled."""
+    from quantlab.prospective import inspect_protocol
+    db,manifest,tmp=study
+    earlier=bars("2026-10-20")
+    quote=float(earlier["close"].iloc[-1])
+    legacy=run_cycle(
+        db,[ASSET],now=datetime(2026,10,21,1,18,tzinfo=timezone.utc),
+        fetch_fn=lambda _:earlier.copy(),
+        quote_fn=lambda p,s,*,now:(quote,now.date().isoformat()),
+        protocol_path=None,  # simulate historical unguarded runtime
+    )
+    assert legacy["status"]=="OK"
+    with sqlite3.connect(db) as con:
+        saved_before=con.execute(
+            "SELECT track_id,decision_date,action,quantity,equity FROM shadow_events "
+            "ORDER BY track_id,decision_date"
+        ).fetchall()
+    assert len(saved_before)==3
+    assert any(row[2]=="BUY" for row in saved_before)
+    audit=assess_collection(db,manifest,now=BEFORE)
+    assert audit["status"]=="BREACH_OR_MISSING"
+    issue=next(i for i in audit["issues"] if i["code"]=="PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY")
+    assert issue["prewindow_events"]==3
+    assert issue["prewindow_virtual_orders"]>=1
+    assert issue["first_unexpected_decision_utc"]=="2026-10-20"
+    assert audit["expected_due_days_per_account"]==0
+    assert audit["includes_return_metrics"] is False
+    locked=inspect_protocol(db,manifest,now=BEFORE)
+    assert locked["status"]=="LOCKED_PRE_WINDOW_ACTIVITY_REVIEW"
+    assert locked["observed_strategy_returns"] is None
+    assert locked["opening_inventory_requires_manual_review"] is True
+    warning=check(
+        shadow_db=db,state_db=tmp/"watchdog-prewindow.db",
+        report_dir=tmp/"watch-reports",now=BEFORE,
+        windows_notifications=False,health_check=lambda:True,
+        protocol_path=manifest,
+    )
+    assert any(t["code"]=="PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY"
+               for t in warning["alert_transitions"])
+    assert not any(t["code"]=="PROTOCOL_DUE_OBSERVATIONS_MISSING"
+                   for t in warning["alert_transitions"])
+    with sqlite3.connect(db) as con:
+        assert con.execute(
+            "SELECT track_id,decision_date,action,quantity,equity FROM shadow_events "
+            "ORDER BY track_id,decision_date"
+        ).fetchall()==saved_before
