@@ -139,3 +139,40 @@ def test_mirror_refuses_backup_target_with_divergent_preexisting_segment(tmp_pat
         mirror(source_root=src,dest_root=dest,require_other_mount=False)
     # Never silently correct or overwrite the tampered backup.
     assert json.loads(manifest.read_text())["utc_date"]=="2011-01-01"
+
+def test_fast_source_checkpoint_still_requires_full_destination_reconstruction(tmp_path,monkeypatch):
+    from quantlab.websocket_archive_checkpoint import create_checkpoint
+    from quantlab import websocket_archive_mirror as mod
+    live,src,dest=setup(tmp_path,3)
+    with pytest.raises(ValueError,match="Missing or stale"):
+        mirror(source_root=src,dest_root=dest,require_other_mount=False,
+               use_verified_source_checkpoint=True)
+    create_checkpoint(src)
+    original=mod.verify_chain
+    checks=[]
+    def spy(path,**kwargs):
+        checks.append(str(path))
+        # Source no longer redundantly restored. Dest MUST restore.
+        assert str(Path(path).resolve())!=str(src.resolve())
+        return original(path,**kwargs)
+    monkeypatch.setattr(mod,"verify_chain",spy)
+    result=mirror(source_root=src,dest_root=dest,require_other_mount=False,
+                  use_verified_source_checkpoint=True)
+    assert result["source_full_restore_skipped_using_checkpoint"] is True
+    assert result["destination_full_restore_performed"]
+    assert result["mirror_recovery"]["frames"]==21
+    assert checks and all(str(dest)==x for x in checks)
+
+
+def test_fast_source_checkpoint_invalid_after_new_append(tmp_path):
+    from quantlab.websocket_archive_checkpoint import create_checkpoint
+    live,src,dest=setup(tmp_path,2)
+    create_checkpoint(src)
+    add_session(live,number=2)
+    add_segment(live_db=live,root=src,through_date=TODAY,max_sessions=1)
+    with pytest.raises(ValueError,match="Missing or stale"):
+        mirror(source_root=src,dest_root=dest,require_other_mount=False,
+               use_verified_source_checkpoint=True)
+    # Full validation remains an independent safe fallback.
+    normal=mirror(source_root=src,dest_root=dest,require_other_mount=False)
+    assert normal["mirror_recovery"]["frames"]==21
