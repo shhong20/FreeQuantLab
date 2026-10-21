@@ -5,12 +5,14 @@ Documentation=https://github.com/shhong20/FreeQuantLab
 [Service]
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab
-ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.isolated_watchdog --policy ops/isolated_paper_scheduler.json --state-db state/isolated-watchdog.db --report-dir reports/isolated --windows-toast
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.isolated_watchdog --policy ops/isolated_paper_scheduler.json --state-db state/isolated-watchdog.db --report-dir reports/isolated
 TimeoutStartSec=90
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/isolated
+# Durable local SQLite/JSON alert history is mandatory; Windows toast is optional
+# and disabled here because WSL Windows interop may be unavailable on reboot.
 StandardOutput=journal
 StandardError=journal

@@ -337,3 +337,8 @@ Read-only forensic audit found **6 original virtual observations dated 2026-10-2
 The original baseline executor now refuses new out-of-window virtual ticks when a frozen protocol is supplied, saving only a skip audit record. The prospective read-only status, collection coverage and Watchdog flag `PROTOCOL_PRE_WINDOW_VIRTUAL_ACTIVITY`; the 90-day outcome stays locked and is explicitly marked for opening-inventory review. Cross-lane 90-day return tables are **blocked**, even after the future cutoff, until a separately documented/manual research decision. Nothing resets or secretly realigns the original cohort.
 
 [Pre-window incident, auditor evidence, model comparison exclusion and safe new-cohort options](docs/PREWINDOW_FROZEN_EVALUATION_REVIEW.md).
+
+
+## Durable local watchdog alerts when Windows Toast is unavailable (2026-10-21)
+
+After the pre-window 90-day evaluation warning was properly persisted, WSL Windows-toast delivery failed and incorrectly made `freequant-watchdog.service` exit nonzero despite successful paper audit and local alert persistence. Both scheduled Watchdog services now run **local-alert-only** by default: SQLite/JSON durable incident histories and reports remain operational, without depending on Windows desktop interoperability. The optional `--windows-toast` manual CLI setting remains available but is not enabled automatically; **no Windows popup is promised**. [Why and how to check persistent alerts](docs/WATCHDOG_LOCAL_ALERT_FALLBACK.md).

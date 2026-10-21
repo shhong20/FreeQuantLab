@@ -188,3 +188,16 @@ def test_stale_notifications_do_not_interrupt_after_machine_reboot(tmp_path):
                            notify=lambda *a:pytest.fail("stale should skip"),
                            now=T22)
     assert result["local_only"]==1
+
+
+def test_auto_watchdog_services_are_durable_local_only_when_windows_unreachable():
+    from pathlib import Path
+    root=Path(__file__).resolve().parents[1]
+    for name in ("freequant-watchdog.service","freequant-isolated-watchdog.service"):
+        data=(root/"deploy"/"systemd"/name).read_text(encoding="utf-8")
+        line=next(x for x in data.splitlines() if x.startswith("ExecStart="))
+        assert "--windows-toast" not in line
+        assert "NoNewPrivileges=true" in data
+        assert "ProtectSystem=strict" in data
+        assert "ReadWritePaths=" in data
+        assert "state" in line and "report" in line
