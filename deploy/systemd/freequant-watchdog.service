@@ -7,12 +7,14 @@ Wants=freequant-dashboard.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab
-ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.watchdog --shadow-db state/shadow.db --state-db state/watchdog.db --report-dir reports/forward --windows-toast --protocol protocols/2026-10-20-btc-eth-90d.json
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.watchdog --shadow-db state/shadow.db --state-db state/watchdog.db --report-dir reports/forward --protocol protocols/2026-10-20-btc-eth-90d.json
 TimeoutStartSec=90
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/forward
+# Durable local SQLite/JSON alert history is mandatory; Windows toast is optional
+# and disabled here because WSL Windows interop may be unavailable on reboot.
 StandardOutput=journal
 StandardError=journal
