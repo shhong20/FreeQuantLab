@@ -95,6 +95,7 @@ def _read_chain(root:Path)->tuple[list[Path],list[dict]]:
     last=None
     docs=[]
     source=None
+    cumulative_sessions=0
     for path in paths:
         d=_read_manifest(path)
         if d["prior_manifest_sha256"]!=previous:
@@ -105,8 +106,8 @@ def _read_chain(root:Path)->tuple[list[Path],list[dict]]:
             raise ValueError("Duplicated/reordered incremental session boundary")
         if d["first_session_key"]>d["last_session_key"]:
             raise ValueError("Reversed segment boundaries")
-        if d["source_session_count_through_last"]!=sum(
-            x["sessions"] for x in docs)+d["sessions"]:
+        cumulative_sessions+=d["sessions"]
+        if d["source_session_count_through_last"]!=cumulative_sessions:
             raise ValueError("Cumulative archive count mismatch")
         previous=_manifest_hash(path)
         last=d["last_session_key"]
