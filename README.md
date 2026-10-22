@@ -350,3 +350,10 @@ The first actual automatic forward observations were **confirmed on Oct 21 at 10
 **New** read-only `quantlab.daily_receipt` produces an atomic per-KST-day report after each 10:20 KST virtual observation grace period. Scheduled at **10:50 and 12:50 KST**, plus ~5 min after WSL starts. On **Oct 22**, the first in-window 2026-10-21 UTC candle is expected to yield 6 baseline, 2 Exaone and 2 Qlib **unique, time-valid hypothetical observations**, with saved public ticker and independent frozen Qlib replay. The report fails closed if records are missing, does not create/backfill market orders, and separately retains the original pre-window research breach. Dashboard `GET /api/daily-receipt` shows operational evidence without publishing locked 90-day returns.
 
 [Observed 2026-10-21 proof, 2026-10-22 acceptance criteria and scheduled monitoring commands](docs/DAILY_FORWARD_ACCEPTANCE.md).
+
+
+## 새 독립 90일 가상평가 (2026-10-21 등록)
+
+기존 원본 90일 원장은 평가 시작 전 가상 거래 6건 때문에 사전등록 성과 비교 대상에서 제외했습니다. 해당 증거는 삭제하거나 수정하지 않습니다. 새 BTC·ETH × 3전략 코호트는 별도 `state/clean_shadow_90d.db`와 서로 다른 계정 ID 6개, 별도 SHA-256 잠금 프로토콜로 등록됐습니다. 새로운 관측 대상은 UTC **2026-10-22~2027-01-19** (총 90일)이고 첫 가상 관측은 **2026-10-23 09:24 KST** 예정입니다. 신규 systemd 타이머 두 개가 수집과 독립 감시를 담당합니다. 날짜 누락·늦은 재부팅·원장 무결성·저장 공공 시세 재현 검사가 포함됩니다. `paper_min_days=90`은 연구 준비도 설정으로, 가상 주문 규칙·초기자금·수수료 가정과 무관하게 계정 ID를 분리합니다.
+
+자세한 실행, 검증, 재시작 절차와 한계: [Clean 90-Day Cohort](docs/CLEAN_90D_COHORT.md). **실제 주문 불가, 자동 전략 승격 불가, 잠긴 성과 보고 불가**이며 수익성을 보증하지 않습니다.
