@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab independent clean 90-day virtual-paper baseline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-clean-runtime
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab --config /home/hong/apps/FreeQuantLab-clean-runtime/examples/clean_shadow_crypto.json --db /home/hong/apps/FreeQuantLab/state/clean_shadow_90d.db shadow-cycle --protocol /home/hong/apps/FreeQuantLab-clean-runtime/protocols/2026-10-21-btc-eth-clean-90d.json
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=read-only
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state
+StandardOutput=journal
+StandardError=journal

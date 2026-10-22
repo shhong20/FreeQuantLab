@@ -1,0 +1,16 @@
+[Unit]
+Description=FreeQuantLab clean cohort daily post-close virtual observations
+
+[Timer]
+# Start only after real future protocol registration; closes at 09:00 KST.
+# Offset from legacy, Exaone, and Qlib runs to reduce upstream contention.
+OnCalendar=*-*-* 09:24:00
+OnCalendar=*-*-* 09:34:00
+OnCalendar=*-*-* 09:44:00
+OnCalendar=*-*-* 10:10:00
+AccuracySec=1min
+Persistent=true
+Unit=freequant-clean-shadow.service
+
+[Install]
+WantedBy=timers.target
