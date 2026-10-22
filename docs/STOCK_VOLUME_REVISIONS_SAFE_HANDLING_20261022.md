@@ -33,3 +33,18 @@
 현재 신설 주간 타이머 다음 예약은 2026-10-24 11:40 KST. 데이터 가격을 임의 보간·수정하지 않고, 실주문과 가상거래 스위치를 켜지 않는다.
 
 **원본 주식 장기 가격이 8,022개 있다는 사실은 공식 거래소 또는 발행사 기업행동 가격원 확인·수익률 승격의 근거가 아니다.** 거래량 사후 정정도 데이터 품질에 관한 경고로 계속 보존한다.
+
+## 08:53 KST 자동 주식 일일 수집 추가 회귀와 완전 복구
+
+재부팅 직후 `freequant-stock-observer.timer`가 실행한 일일 `stock_daily_observer --capture`도 마지막 거래일 거래량 정정 6종목을 공급자 전체 가격 수정으로 처리하고 exit2로 중단됐다. 따라서 본 PR은 **장기 원장에 한정하지 않고 기존 자동 일봉 관측기의 가격/거래량 분류를 동일하게 보완**한다.
+
+- daily `daily_bars` 최초 OHLCV는 절대 덮어쓰지 않는다. `revision_alerts`의 기존 원문 JSON에 원본 값·새로운 관측 값·새 payload SHA를 append-only 보존.
+- 거래량만 다른 경우: `VENDOR_VOLUME_REVISION_RETAINED_NO_TRADING` 및 전체 `STOCK_DAILY_CAPTURED_WITH_VOLUME_REVISIONS_NO_TRADING`으로 명시적 경고 처리, **수집 서비스 계속 실행 가능**.
+- 가격 OHLC가 다른 경우: 기존 `HISTORICAL_PROVIDER_REVISION_BLOCKED` 및 전체 exit2를 유지.
+- 읽기 전용 일일 감사의 `vendor_volume_only_revision_evidence`와 `historical_price_revision_alerts`를 분리. `stock_evidence_quality`에도 `DAILY_VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION` 게이트를 기록. **Qlib 가상거래/성과 발행은 여전히 차단**.
+- 이미 예전 버전이 생성한 `revision_alerts`의 6개 원문도 JSON OHLC 동등성으로 분리되므로 과거 증거를 변경하지 않는다.
+- 수정 코드로 실제 2026-10-22 09:01 KST 공개 일봉 재수집 성공, 6종목 가격 수정 0, 거래량 수정 원본 보존, raw SHA 확인 PASS. 기존 코인 서비스/모델/영구 거래 상태 무변경.
+
+## 테스트 시계 경계 회귀
+
+전체 회귀 2026-10-22 UTC 기준 실행 중 기존 `tests/test_websocket_incremental_archive.py::test_no_current_day_by_default_until_the_next_utc_day`가 시간 경과에 따라 실패함을 확인했다. 과거 고정된 fixture 날짜(2026-10-21)가 이미 UTC 어제가 되어 '오늘은 자동으로 제외'라는 assertion이 잘못 발동한 것이며 운영 WebSocket 증분 로직은 불변이다. 테스트 기준 UTC 시계만 fixture의 동일 일자로 freeze하여 **달력 날짜가 바뀌어도 deterministic**하게 개선했다. 수정 후 WSL **전체 413 PASS**.
