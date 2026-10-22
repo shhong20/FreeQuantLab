@@ -1,0 +1,12 @@
+[Unit]
+Description=Re-check last 24h Upbit L2 and WS observation gap incidents
+
+[Timer]
+OnCalendar=*-*-* *:09/30:00
+OnStartupSec=10min
+AccuracySec=30s
+Persistent=true
+Unit=freequant-market-gap-monitor.service
+
+[Install]
+WantedBy=timers.target
