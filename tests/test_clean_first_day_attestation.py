@@ -123,3 +123,39 @@ def test_watchdog_service_runs_independent_seal_only_after_clean_watchdog_passes
     assert "ProtectHome=read-only" in txt
     assert "NoNewPrivileges=true" in txt
     assert "ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports/clean-daily" in txt
+
+def test_change_during_independent_audit_fails_closed(cohort,tmp_path,monkeypatch):
+    import quantlab.clean_first_day_attestation as att
+    db,manifest=cohort
+    record(db,manifest)
+    actual=att.inspect_clean
+    def changing_audit(*args,**kwargs):
+        result=actual(*args,**kwargs)
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE shadow_quote_evidence SET public_ticker_price=public_ticker_price+1 WHERE symbol='KRW-ETH'")
+        return result
+    monkeypatch.setattr(att,"inspect_clean",changing_audit)
+    dest=tmp_path/"receipt"
+    with pytest.raises(AdmissionError,match="changed during independent audit"):
+        attest_first_day(db,manifest,dest,now=OPEN)
+    assert not dest.exists()
+
+def test_change_between_hash_and_seal_fails_closed(cohort,tmp_path,monkeypatch):
+    import quantlab.clean_first_day_attestation as att
+    db,manifest=cohort
+    record(db,manifest)
+    original=att._first_day_snapshot
+    calls=0
+    def mutate_at_recheck(*args,**kwargs):
+        nonlocal calls
+        calls+=1
+        events,quotes=original(*args,**kwargs)
+        if calls==2:
+            with sqlite3.connect(db) as conn:
+                conn.execute("UPDATE shadow_quote_evidence SET public_ticker_price=public_ticker_price+1 WHERE symbol='KRW-BTC'")
+        return events,quotes
+    monkeypatch.setattr(att,"_first_day_snapshot",mutate_at_recheck)
+    dest=tmp_path/"receipt"
+    with pytest.raises(AdmissionError,match="changed before receipt"):
+        attest_first_day(db,manifest,dest,now=OPEN)
+    assert not dest.exists()
