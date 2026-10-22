@@ -6,6 +6,7 @@ After=freequant-clean-shadow.service
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab-clean-runtime
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.clean_cohort --db /home/hong/apps/FreeQuantLab/state/clean_shadow_90d.db --protocol /home/hong/apps/FreeQuantLab-clean-runtime/protocols/2026-10-21-btc-eth-clean-90d.json --alert-db /home/hong/apps/FreeQuantLab/state/clean-watchdog.db --report-dir /home/hong/apps/FreeQuantLab/reports/clean-daily
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.clean_first_day_attestation --db /home/hong/apps/FreeQuantLab/state/clean_shadow_90d.db --protocol /home/hong/apps/FreeQuantLab-clean-runtime/protocols/2026-10-21-btc-eth-clean-90d.json --receipt-dir /home/hong/apps/FreeQuantLab/reports/clean-daily/first-day
 TimeoutStartSec=90
 UMask=0077
 NoNewPrivileges=true
