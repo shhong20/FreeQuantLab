@@ -34,6 +34,11 @@ MAX_BATCHES=6
 MAX_SESSIONS=20
 MAX_ARCHIVE_BYTES=256*1024*1024
 MIN_FREE_BYTES=2*1024*1024*1024
+# A collection session can finish while full source+D recovery is running.
+# Preserve a small, explicitly unmirrored backlog without reporting a
+# completed-to-now backup. Larger or stale residuals are still failures.
+MAX_FRESH_RESIDUAL_SESSIONS=4
+MAX_FRESH_RESIDUAL_LAG_SECONDS=2400
 
 
 def _preflight(live:Path,source:Path,dest:Path,*,min_free_bytes:int,
@@ -100,6 +105,12 @@ def run_backup_cycle(*,live_db:str|Path=DEFAULT_DB,
         # moved/modified the destination during a pending invocation.
         _preflight(live,source,dest,min_free_bytes=min_free_bytes,
                    max_archive_bytes=max_archive_bytes)
+        # Capture a pre-cycle finalized session count. A later residual can
+        # be accepted only if EVERY session already finalized at cycle entry
+        # has been cryptographically mirrored/restored. This is not a
+        # live-to-now snapshot, and the remaining sessions remain UNBACKED.
+        initial_gap=measure_gap(live_db=live,archive_root=source,mirror_root=dest)
+        initial_finished=initial_gap["completed_sessions_in_live_db"]
         new_sessions=new_frames=segments_created=0
         batches=0
         # Today UTC is an explicit partial-date exception; always only
@@ -131,6 +142,24 @@ def run_backup_cycle(*,live_db:str|Path=DEFAULT_DB,
             raise ValueError("Backup mirror not completely copied and recovered")
         target_checkpoint=create_checkpoint(dest)
         gap=measure_gap(live_db=live,archive_root=source,mirror_root=dest)
+        # Fresh sessions can finish DURING full source/mirror verification.
+        # Distinguish those from pre-existing missed/invalid evidence. Do
+        # not call this "zero RPO": the new session payloads are unbacked.
+        pending=gap["not_yet_mirrored_completed_sessions"]
+        mirror_precycle_complete=(
+            gap["mirrored_completed_sessions_on_second_volume"]>=initial_finished
+        )
+        fresh_capture_lag_only=(
+            0<pending<=MAX_FRESH_RESIDUAL_SESSIONS
+            and mirror_precycle_complete
+            and gap["new_segments_not_mirrored"]==0
+            and gap["source_and_mirror_compressed_SHA"]=="PASS"
+            and gap["last_archived_session_watermark_matches_live"] is True
+            and gap["mirror_lag_versus_latest_completed_seconds"]
+                <=MAX_FRESH_RESIDUAL_LAG_SECONDS
+            and gap["mirror_recovery_point_age_seconds"]
+                <=MAX_FRESH_RESIDUAL_LAG_SECONDS
+        )
         # New sessions could finish DURING the verification, so report
         # measured residual lag. Never claim RPO==0 without rechecking.
         receipt={
@@ -140,6 +169,12 @@ def run_backup_cycle(*,live_db:str|Path=DEFAULT_DB,
             "captured_at_utc":datetime.now(timezone.utc).isoformat(),
             "utc_archive_cutoff_is_partial_date":through,
             "new_sessions_sealed":new_sessions,"new_frames_sealed":new_frames,
+            "completed_sessions_at_cycle_start":initial_finished,
+            "preexisting_finalized_sessions_all_mirrored":mirror_precycle_complete,
+            "fresh_capture_lag_only":fresh_capture_lag_only,
+            "fresh_capture_lag_limit_sessions":MAX_FRESH_RESIDUAL_SESSIONS,
+            "fresh_capture_lag_limit_seconds":MAX_FRESH_RESIDUAL_LAG_SECONDS,
+            "unbacked_finalized_sessions_at_receipt":pending,
             "new_source_segments":segments_created,"batches_used":batches,
             "final_source_checkpoint_status":source_checkpoint["status"],
             "final_mirror_checkpoint_status":target_checkpoint["status"],
@@ -188,7 +223,11 @@ def main(argv=None)->int:
                                 max_batches=args.max_batches,max_sessions=args.max_sessions,
                                 perform=args.run)
         print(json.dumps(result,ensure_ascii=False))
-        return 0 if (not args.run or result["status"]=="MIRROR_RECOVERED_NO_BACKLOG_AT_CHECK") else 2
+        return (0 if (not args.run
+                       or result["status"]=="MIRROR_RECOVERED_NO_BACKLOG_AT_CHECK"
+                       or (result["status"]=="MIRROR_RECOVERED_WITH_NEW_SESSIONS_AFTER_SNAPSHOT"
+                           and result.get("fresh_capture_lag_only") is True))
+                else 2)
     except (OSError,ValueError,FileNotFoundError) as exc:
         print(json.dumps({"status":"BACKUP_FAILED_CLOSED",
                           "reason_type":type(exc).__name__,
