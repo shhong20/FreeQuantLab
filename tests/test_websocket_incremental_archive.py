@@ -53,7 +53,16 @@ def test_resumable_incremental_chain_reconstructs_all_sessions_and_book_links(tm
     assert len(list(root.glob("seg-*")))==3
 
 
-def test_no_current_day_by_default_until_the_next_utc_day(tmp_path):
+def test_no_current_day_by_default_until_the_next_utc_day(tmp_path,monkeypatch):
+    # Freeze reference UTC day to the synthetic session date; otherwise
+    # this test starts failing after 2026-10-21 midnight UTC.
+    import quantlab.websocket_incremental_archive as archive_module
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls,tz=None):
+            assert tz==timezone.utc
+            return datetime(2026,10,21,18,0,tzinfo=timezone.utc)
+    monkeypatch.setattr(archive_module,"datetime",FixedDatetime)
     live=tmp_path/"live.db"
     seed(live,2)
     result=add_segment(live_db=live,root=tmp_path/"archive",max_sessions=2)

@@ -190,6 +190,13 @@ def _diff(a,b)->bool:
     return any(not math.isclose(float(x),float(y),rel_tol=1e-9,abs_tol=1e-5)
                for x,y in zip(a,b))
 
+def _volume_only(a,b)->bool:
+    """Different finalized vendor volume, identical OHLC; never update stored bars."""
+    return (len(a)==len(b)==5
+            and all(math.isclose(float(x),float(y),rel_tol=1e-9,abs_tol=1e-5)
+                    for x,y in zip(a[:4],b[:4]))
+            and not math.isclose(float(a[4]),float(b[4]),rel_tol=1e-9,abs_tol=1e-5))
+
 
 def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                     source_db:str|Path=DEFAULT_DB,now:datetime|None=None,
@@ -225,7 +232,7 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                             """SELECT session_date,open,high,low,close,volume
                                FROM daily_bars WHERE market=? AND ticker=?""",
                             (market,ticker))}
-                        overlap=0;different=0;new=0;local_conflicts=0
+                        overlap=0;different=0;volume_revisions=0;new=0;local_conflicts=0
                         with con:
                             con.execute("""INSERT OR IGNORE INTO raw_history(
                                     market,ticker,provider,observed_utc,raw_sha256,raw,parsed_sessions)
@@ -236,11 +243,16 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                                 if prior is not None:
                                     overlap+=1
                                     if _diff(prior,values):
-                                        different+=1
+                                        if _volume_only(prior,values):
+                                            volume_revisions+=1
+                                            conflict_type="LIVE_BASELINE_VOLUME_REVISION"
+                                        else:
+                                            different+=1
+                                            conflict_type="LIVE_BASELINE_MISMATCH"
                                         con.execute("INSERT OR IGNORE INTO conflicts VALUES(?,?,?,?,?,?)",
-                                            (market,ticker,day,"LIVE_BASELINE_MISMATCH",digest,
+                                            (market,ticker,day,conflict_type,digest,
                                              json.dumps({"source":values,"baseline":prior})))
-                                        # Refuse storing dubious series silently as accepted
+                                        # Never rewrite the initial immutable baseline
                                         continue
                                 existing=con.execute(
                                     "SELECT open,high,low,close,volume FROM long_bars WHERE market=? AND ticker=? AND session_date=?",
@@ -250,9 +262,14 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                                                 (market,ticker,day,*values,digest))
                                     new+=1
                                 elif _diff(existing,values):
-                                    local_conflicts+=1
+                                    if _volume_only(existing,values):
+                                        volume_revisions+=1
+                                        conflict_type="LONG_VENDOR_VOLUME_REVISION"
+                                    else:
+                                        local_conflicts+=1
+                                        conflict_type="LONG_VENDOR_REVISION"
                                     con.execute("INSERT OR IGNORE INTO conflicts VALUES(?,?,?,?,?,?)",
-                                                (market,ticker,day,"LONG_VENDOR_REVISION",digest,
+                                                (market,ticker,day,conflict_type,digest,
                                                  json.dumps({"source":values,"previous":existing})))
                             for day,adj in adjusted:
                                 old=con.execute(
@@ -270,11 +287,16 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                                 con.execute("INSERT OR IGNORE INTO vendor_actions VALUES(?,?,?,?,?,?)",
                                             (ticker,kind,day,eventsha,body,digest))
                         result.append({"market":market,"ticker":ticker,
-                            "status":"REVIEW_UNMODIFIED_ORIGINAL_AND_VENDOR_PRICE" if different or local_conflicts else "STORED_UNVERIFIED_VENDOR_HISTORY",
+                            "status":("REVIEW_UNMODIFIED_ORIGINAL_AND_VENDOR_PRICE"
+                                      if different or local_conflicts else
+                                      "STORED_VENDOR_HISTORY_WITH_VOLUME_REVISION_EVIDENCE"
+                                      if volume_revisions else
+                                      "STORED_UNVERIFIED_VENDOR_HISTORY"),
                             "sessions_received":len(rows),"first_day":rows[0][0],
                             "last_day":rows[-1][0],"new_immutable_bars":new,
                             "overlap_compared":overlap,
                             "overlap_mismatches":different,
+                            "vendor_volume_revisions_recorded":volume_revisions,
                             "historical_revisions_detected":local_conflicts,
                             "vendor_actions":len(events),"vendor_adjusted_points":len(adjusted),
                             "raw_sha256":digest})
@@ -289,9 +311,14 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
         finally:
             con.close();base.close()
     return {
-        "status":"LONG_VENDOR_HISTORY_WITH_ISSUER_AND_TOTAL_RETURN_GATE_BLOCKED"
-            if all(x["status"]=="STORED_UNVERIFIED_VENDOR_HISTORY" for x in result)
-            else "LONG_VENDOR_HISTORY_REVIEW_REQUIRED",
+        "status":(
+            "LONG_VENDOR_HISTORY_REVIEW_REQUIRED"
+            if any(x["status"] in ("REVIEW_UNMODIFIED_ORIGINAL_AND_VENDOR_PRICE",
+                                   "SOURCE_FAILED_NOT_QUALIFIED") for x in result)
+            else "LONG_VENDOR_HISTORY_WITH_VOLUME_REVISIONS_NOT_TRADING"
+            if any(x["status"]=="STORED_VENDOR_HISTORY_WITH_VOLUME_REVISION_EVIDENCE"
+                   for x in result)
+            else "LONG_VENDOR_HISTORY_WITH_ISSUER_AND_TOTAL_RETURN_GATE_BLOCKED"),
         "observed_at_utc":stamp,"assets":result,
         "source_observation_database_unchanged":True,
         "official_exchange_data_not_confirmed":True,
@@ -315,6 +342,7 @@ def audit_history(db:str|Path=DEFAULT_HISTORY)->dict:
             "SELECT conflict_type,competing_values_json FROM conflicts"
         ).fetchall()
         precision_jitter=0
+        volume_revisions=0
         material_conflicts=0
         for conflict_type,body in conflicts:
             if conflict_type=="VENDOR_ADJ_CLOSE_REVISION":
@@ -322,6 +350,14 @@ def audit_history(db:str|Path=DEFAULT_HISTORY)->dict:
                 if math.isclose(x["previous_adj"],x["new_adj"],
                                 rel_tol=ADJCLOSE_MATERIAL_RELATIVE,abs_tol=1e-5):
                     precision_jitter+=1
+                    continue
+            if conflict_type in (
+                    "LIVE_BASELINE_MISMATCH","LIVE_BASELINE_VOLUME_REVISION",
+                    "LONG_VENDOR_REVISION","LONG_VENDOR_VOLUME_REVISION"):
+                values=json.loads(body)
+                previous=values.get("baseline",values.get("previous"))
+                if previous is not None and _volume_only(previous,values["source"]):
+                    volume_revisions+=1
                     continue
             material_conflicts+=1
         failures=c.execute("SELECT COUNT(*) FROM failures").fetchone()[0]
@@ -360,12 +396,17 @@ def audit_history(db:str|Path=DEFAULT_HISTORY)->dict:
                     "price_total_return_signals_eligible":False}
         all_lengths=all(v["historical_length_threshold_662_met"]
                         for assets in by.values() for v in assets.values())
-    return {"status":"LONG_HISTORY_LENGTH_VERIFIED_NOT_MODEL_ELIGIBILITY"
-            if all_lengths and complete_raw and not material_conflicts and not failures else
-            "LONG_HISTORY_OR_SOURCE_INTEGRITY_REVIEW_REQUIRED",
+    return {"status":(
+            "LONG_HISTORY_OR_SOURCE_INTEGRITY_REVIEW_REQUIRED"
+            if not all_lengths or not complete_raw or material_conflicts or failures else
+            "LONG_HISTORY_LENGTH_WITH_VENDOR_VOLUME_REVISIONS_NOT_MODEL_ELIGIBILITY"
+            if volume_revisions else
+            "LONG_HISTORY_LENGTH_VERIFIED_NOT_MODEL_ELIGIBILITY"),
             "markets":by,"sha256_all_history_source_payloads_verified":complete_raw,
             "stored_raw_snapshots":len(raw),
             "material_price_or_adjustment_conflicts":material_conflicts,
+            "vendor_volume_revisions_retained_without_rewrite":volume_revisions,
+            "volume_revisions_may_affect_volume_features":bool(volume_revisions),
             "retained_vendor_adjustment_precision_jitter_events":precision_jitter,
             "adjusted_close_material_relative_threshold":ADJCLOSE_MATERIAL_RELATIVE,
             "historical_fetch_failures":failures,
@@ -390,7 +431,9 @@ def main(argv=None):
     print(json.dumps(doc,ensure_ascii=False))
     return 0 if doc["status"] in (
         "LONG_VENDOR_HISTORY_WITH_ISSUER_AND_TOTAL_RETURN_GATE_BLOCKED",
-        "LONG_HISTORY_LENGTH_VERIFIED_NOT_MODEL_ELIGIBILITY"
+        "LONG_VENDOR_HISTORY_WITH_VOLUME_REVISIONS_NOT_TRADING",
+        "LONG_HISTORY_LENGTH_VERIFIED_NOT_MODEL_ELIGIBILITY",
+        "LONG_HISTORY_LENGTH_WITH_VENDOR_VOLUME_REVISIONS_NOT_MODEL_ELIGIBILITY"
     ) else 2
 
 if __name__=="__main__":

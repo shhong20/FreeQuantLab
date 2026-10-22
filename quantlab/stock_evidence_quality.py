@@ -20,7 +20,7 @@ from pathlib import Path
 from uuid import uuid4
 import sqlite3
 
-from .stock_daily_observer import DEFAULT_DB, PROVIDER, UNIVERSE
+from .stock_daily_observer import DEFAULT_DB, PROVIDER, UNIVERSE, _volume_only
 
 # Exchange calendar packages may not incorporate last-minute Korean holidays.
 # This exception is public but we do NOT certify a full official KRX calendar.
@@ -150,7 +150,13 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
         if conn.execute("PRAGMA quick_check").fetchone()[0]!="ok":
             raise ValueError("Stock evidence SQLite quick_check failed")
         # Fail closed on ANY previous source revision or fetch failure.
-        total_revisions=conn.execute("SELECT COUNT(*) FROM revision_alerts").fetchone()[0]
+        revisions=conn.execute(
+            "SELECT old_values_json,new_values_json FROM revision_alerts"
+        ).fetchall()
+        total_volume_revisions=sum(
+            _volume_only(json.loads(old),json.loads(new))
+            for old,new in revisions)
+        total_revisions=len(revisions)-total_volume_revisions
         total_failures=conn.execute("SELECT COUNT(*) FROM fetch_failures").fetchone()[0]
         for market,tickers in UNIVERSE.items():
             result["markets"][market]={}
@@ -216,6 +222,7 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
                     "blocks":reasons,
                 }
     result["historical_vendor_price_revision_alerts"]=total_revisions
+    result["historical_vendor_volume_revision_alerts"]=total_volume_revisions
     result["historical_vendor_fetch_failures"]=total_failures
     result["unresolved_issues"]=[
         "NO_SIGNED_OFFICIAL_MARKET_SESSION_SOURCE",
@@ -225,6 +232,9 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
     ]
     if total_revisions:
         result["unresolved_issues"].append("IMMUTABLE_VENDOR_REVISIONS_TO_RECONCILE")
+    if total_volume_revisions:
+        result["unresolved_issues"].append(
+            "DAILY_VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION")
     if total_failures:
         result["unresolved_issues"].append("PROVIDER_FETCH_FAILURES_TO_REVIEW")
     # Long history is separate and immutable; never allow 3-month daily
@@ -241,6 +251,10 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
             "all_raw_payload_SHA256_verified":
                 evidence["sha256_all_history_source_payloads_verified"],
             "material_conflicts":evidence["material_price_or_adjustment_conflicts"],
+            "vendor_volume_revisions_stored_immutably":
+                evidence["vendor_volume_revisions_retained_without_rewrite"],
+            "volume_dependent_model_features_not_certified":
+                evidence["volume_revisions_may_affect_volume_features"],
             "vendor_adjustment_rounding_jitter_kept":
                 evidence["retained_vendor_adjustment_precision_jitter_events"],
             "official_dividend_split_and_ETF_distribution_not_verified":True,
@@ -268,6 +282,9 @@ def inspect_stock_evidence(db:str|Path=DEFAULT_DB,*,calendar_getter=None)->dict:
                 "NO_CAUSAL_662_SESSION_STOCK_MODEL_HISTORY")
             result["unresolved_issues"].append(
                 "LONG_VENDOR_PRICE_HISTORY_EXISTS_BUT_NO_CAUSAL_FROZEN_STOCK_QLIB_MODEL")
+        if evidence["vendor_volume_revisions_retained_without_rewrite"]:
+            result["unresolved_issues"].append(
+                "VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION")
         if evidence["material_price_or_adjustment_conflicts"]:
             result["unresolved_issues"].append(
                 "LONG_VENDOR_PRICE_OR_ADJUSTMENT_CONFLICTS_REQUIRE_REVIEW")

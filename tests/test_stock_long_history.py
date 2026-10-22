@@ -219,3 +219,65 @@ def test_weekly_stock_history_systemd_units_are_unprivileged_and_nontrading():
     assert "stock_long_history --audit" in daily
     assert "shadow.db" not in service
     assert "real-order" not in service
+
+def test_volume_only_vendor_update_is_provenance_warning_not_price_failure(tmp_path):
+    from quantlab import stock_evidence_quality as quality
+    original,history=fixture(tmp_path)
+    run_history(original,history)
+
+    def later_naver(url,**kwargs):
+        result=synthetic_naver(url,**kwargs)
+        data=__import__("ast").literal_eval(result.content.decode().strip())
+        data[-1][5]+=171  # Known 2026-10-21 session, revised volume only
+        result.content=repr(data).encode()
+        return result
+
+    def later_yahoo(url,**kwargs):
+        result=synthetic_yahoo(url,**kwargs)
+        data=json.loads(result.content)
+        data["chart"]["result"][0]["indicators"]["quote"][0]["volume"][-2]+=111
+        result.content=json.dumps(data).encode()
+        return result
+
+    changed=run_history(original,history,naver_getter=later_naver,
+                        yahoo_getter=later_yahoo)
+    assert changed["status"]=="LONG_VENDOR_HISTORY_WITH_VOLUME_REVISIONS_NOT_TRADING"
+    assert [a["vendor_volume_revisions_recorded"] for a in changed["assets"]]==[1]*6
+    assert all(a["overlap_mismatches"]==0 for a in changed["assets"])
+    audit=h.audit_history(history)
+    assert audit["status"]=="LONG_HISTORY_LENGTH_WITH_VENDOR_VOLUME_REVISIONS_NOT_MODEL_ELIGIBILITY"
+    assert audit["material_price_or_adjustment_conflicts"]==0
+    assert audit["vendor_volume_revisions_retained_without_rewrite"]==6
+    assert audit["volume_revisions_may_affect_volume_features"]
+    report=quality.inspect_stock_evidence(original)
+    assert report["independent_long_history"]["vendor_volume_revisions_stored_immutably"]==6
+    assert report["90_day_forward_qlib_registered"] is False
+    assert "VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION" in report["unresolved_issues"]
+    # Both original live price and initial long archive are immutable.
+    with sqlite3.connect(history) as conn:
+        assert conn.execute(
+            "SELECT volume FROM long_bars WHERE ticker='005930' AND session_date='2026-10-21'"
+        ).fetchone()[0]==300
+        assert conn.execute(
+            "SELECT COUNT(*) FROM conflicts WHERE conflict_type='LIVE_BASELINE_VOLUME_REVISION'"
+        ).fetchone()[0]==6
+    again=run_history(original,history,naver_getter=later_naver,
+                      yahoo_getter=later_yahoo)
+    assert again["status"]=="LONG_VENDOR_HISTORY_WITH_VOLUME_REVISIONS_NOT_TRADING"
+    assert h.audit_history(history)["vendor_volume_revisions_retained_without_rewrite"]==6
+
+
+def test_nonvolume_ohlc_change_still_halts_release(tmp_path):
+    original,history=fixture(tmp_path)
+    run_history(original,history)
+    def wrong_price(url,**kwargs):
+        result=synthetic_naver(url,**kwargs)
+        data=__import__("ast").literal_eval(result.content.decode().strip())
+        data[-1][4]+=0.5  # within OHLC range, genuine material close revision
+        result.content=repr(data).encode()
+        return result
+    changed=run_history(original,history,naver_getter=wrong_price)
+    assert changed["status"]=="LONG_VENDOR_HISTORY_REVIEW_REQUIRED"
+    audit=h.audit_history(history)
+    assert audit["status"]=="LONG_HISTORY_OR_SOURCE_INTEGRITY_REVIEW_REQUIRED"
+    assert audit["material_price_or_adjustment_conflicts"]==3

@@ -166,3 +166,66 @@ def test_systemd_stock_market_not_cryptocurrency_and_safe_startup():
     assert "state/shadow.db" not in service
     assert "09:30:00" in timer and "21:30:00" in timer
     assert "OnBootSec=20min" in timer and "Persistent=true" in timer
+
+
+def test_six_stock_last_session_volume_only_revisions_are_immutable_nonfatal(tmp_path):
+    from quantlab import stock_evidence_quality as evidence
+    path=tmp_path/"stock_daily"/"observations.sqlite3"
+    initial=m.capture(path,now=NOW,naver_getter=naver,yahoo_getter=yahoo)
+    assert initial["status"]=="STOCK_PUBLIC_DAILY_DATA_CAPTURED_NO_TRADING"
+    def revised_naver(url,**kwargs):
+        response=naver(url,**kwargs)
+        assert b"110, 300" in response.content
+        response.content=response.content.replace(b"110, 300",b"110, 315")
+        return response
+    def revised_yahoo(url,**kwargs):
+        response=yahoo(url,**kwargs)
+        raw=json.loads(response.content)
+        raw["chart"]["result"][0]["indicators"]["quote"][0]["volume"][1]+=90
+        response.content=json.dumps(raw).encode()
+        return response
+    updated=m.capture(path,now=NOW,naver_getter=revised_naver,
+                      yahoo_getter=revised_yahoo)
+    assert updated["status"]=="STOCK_DAILY_CAPTURED_WITH_VOLUME_REVISIONS_NO_TRADING"
+    assert all(x["status"]=="VENDOR_VOLUME_REVISION_RETAINED_NO_TRADING"
+               for x in updated["results"])
+    assert all(x["provider_revisions"]==0 and x["volume_revisions_retained"]==1
+               for x in updated["results"])
+    assert not updated["automatic_model_promotion"]
+    assert updated["paper_orders_generated"]==0
+    audit=m.inspect(path)
+    assert audit["last_12_raw_payload_sha256_verified"]
+    assert sum(v["vendor_volume_only_revision_evidence"]
+               for market in audit["markets"].values() for v in market.values())==6
+    assert sum(v["historical_price_revision_alerts"]
+               for market in audit["markets"].values() for v in market.values())==0
+    q=evidence.inspect_stock_evidence(path)
+    assert q["historical_vendor_volume_revision_alerts"]==6
+    assert q["historical_vendor_price_revision_alerts"]==0
+    assert "DAILY_VENDOR_VOLUME_REVISIONS_REQUIRE_VOLUME_FEATURE_RECONCILIATION" in q["unresolved_issues"]
+    with sqlite3.connect(path) as con:
+        # Both the original KRX bar and the original US bar remain immutable.
+        assert con.execute(
+            "SELECT volume FROM daily_bars WHERE ticker='005930' AND session_date='2026-10-21'"
+        ).fetchone()[0]==300
+        assert con.execute(
+            "SELECT volume FROM daily_bars WHERE ticker='AAPL' AND session_date='2026-10-20'"
+        ).fetchone()[0]==200
+        assert con.execute("SELECT count(*) FROM revision_alerts").fetchone()[0]==6
+    repeated=m.capture(path,now=NOW,naver_getter=revised_naver,yahoo_getter=revised_yahoo)
+    assert repeated["status"]=="STOCK_DAILY_CAPTURED_WITH_VOLUME_REVISIONS_NO_TRADING"
+    with sqlite3.connect(path) as con:
+        assert con.execute("SELECT count(*) FROM revision_alerts").fetchone()[0]==6
+
+
+def test_stock_volume_evidence_does_not_hide_changed_ohlc_price(tmp_path):
+    path=tmp_path/"stock_daily"/"observations.sqlite3"
+    m.capture(path,now=NOW,naver_getter=naver,yahoo_getter=yahoo)
+    def changed_price(url,**kwargs):
+        response=naver(url,**kwargs)
+        response.content=response.content.replace(b"110, 300",b"110.5, 315")
+        return response
+    capture=m.capture(path,now=NOW,naver_getter=changed_price,yahoo_getter=yahoo)
+    assert capture["status"]=="STOCK_DATA_DEGRADED_NO_TRADING"
+    assert all(x["provider_revisions"]==1 and x["volume_revisions_retained"]==0
+               for x in capture["results"] if x["market"]=="KRX")

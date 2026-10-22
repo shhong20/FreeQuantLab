@@ -205,6 +205,14 @@ def _open(path:Path)->sqlite3.Connection:
     return con
 
 
+def _volume_only(a,b)->bool:
+    """True only if immutable OHLC matches but finalized vendor volume differs."""
+    return (len(a)==len(b)==5 and
+            all(math.isclose(float(x),float(y),rel_tol=1e-9,abs_tol=1e-5)
+                for x,y in zip(a[:4],b[:4])) and
+            not math.isclose(float(a[4]),float(b[4]),rel_tol=1e-9,abs_tol=1e-5))
+
+
 def capture(db:str|Path=DEFAULT_DB,*,now:datetime|None=None,
             naver_getter=requests.get,yahoo_getter=requests.get)->dict:
     now=now or utcnow()
@@ -226,7 +234,7 @@ def capture(db:str|Path=DEFAULT_DB,*,now:datetime|None=None,
                         raw,rows=(fetch_naver(ticker,now,getter=naver_getter) if market=="KRX"
                                   else fetch_yahoo(ticker,now,getter=yahoo_getter))
                         h=sha256(raw).hexdigest()
-                        added=conflicts=0
+                        added=conflicts=volume_revisions=0
                         # Atomic per-symbol transaction: no partial rows on failure.
                         with con:
                             con.execute(
@@ -248,7 +256,10 @@ def capture(db:str|Path=DEFAULT_DB,*,now:datetime|None=None,
                                                VALUES(?,?,?,?,?,?,?,?)""",
                                             (source,market,ticker,day,json.dumps(old),
                                              json.dumps(values),observed,h))
-                                        conflicts+=1
+                                        if _volume_only(old,values):
+                                            volume_revisions+=1
+                                        else:
+                                            conflicts+=1
                                 else:
                                     con.execute(
                                         "INSERT INTO daily_bars VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -258,9 +269,12 @@ def capture(db:str|Path=DEFAULT_DB,*,now:datetime|None=None,
                                   datetime.fromisoformat(rows[-1][0]).date()).days
                         results.append({"market":market,"ticker":ticker,"status":(
                             "HISTORICAL_PROVIDER_REVISION_BLOCKED" if conflicts else
-                            "STALE_MARKET_VENDOR_NO_NEW_DAILY_DATA" if age_days>10 else "PASS"),
+                            "STALE_MARKET_VENDOR_NO_NEW_DAILY_DATA" if age_days>10 else
+                            "VENDOR_VOLUME_REVISION_RETAINED_NO_TRADING" if volume_revisions
+                            else "PASS"),
                             "source":source,"latest_day":rows[-1][0],
                             "new_completed_bars":added,"provider_revisions":conflicts,
+                            "volume_revisions_retained":volume_revisions,
                             "latest_bar_calendar_age_days":age_days,
                             "raw_sha256":h})
                     except (ValueError,requests.RequestException,KeyError,TypeError,
@@ -275,8 +289,12 @@ def capture(db:str|Path=DEFAULT_DB,*,now:datetime|None=None,
                                         "error_class":type(exc).__name__})
         finally:
             con.close()
-    degraded=any(item["status"]!="PASS" for item in results)
+    safe=("PASS","VENDOR_VOLUME_REVISION_RETAINED_NO_TRADING")
+    degraded=any(item["status"] not in safe for item in results)
+    volume_warning=any(item["status"]=="VENDOR_VOLUME_REVISION_RETAINED_NO_TRADING"
+                       for item in results)
     return {"status":"STOCK_DATA_DEGRADED_NO_TRADING" if degraded else
+            "STOCK_DAILY_CAPTURED_WITH_VOLUME_REVISIONS_NO_TRADING" if volume_warning else
             "STOCK_PUBLIC_DAILY_DATA_CAPTURED_NO_TRADING",
             "observed_at_utc":observed,
             "results":results,
@@ -304,15 +322,20 @@ def inspect(db:str|Path=DEFAULT_DB)->dict:
                     """SELECT COUNT(*),MIN(session_date),MAX(session_date)
                        FROM daily_bars WHERE market=? AND ticker=? AND source=?""",
                     (market,ticker,source)).fetchone()
-                revised=con.execute(
-                    "SELECT COUNT(*) FROM revision_alerts WHERE market=? AND ticker=?",
-                    (market,ticker)).fetchone()[0]
+                revisions=con.execute(
+                    "SELECT old_values_json,new_values_json FROM revision_alerts WHERE market=? AND ticker=?",
+                    (market,ticker)).fetchall()
+                volume_count=sum(_volume_only(json.loads(a),json.loads(b))
+                                 for a,b in revisions)
+                revised=len(revisions)
                 snaps=con.execute(
                     "SELECT COUNT(*) FROM source_snapshots WHERE market=? AND ticker=?",
                     (market,ticker)).fetchone()[0]
                 per[market][ticker]={"stored_completed_bars":n,"first":lo,"last":hi,
                                      "immutable_snapshots":snaps,
-                                     "historical_revision_alerts":revised}
+                                     "historical_revision_alerts":revised,
+                                     "vendor_volume_only_revision_evidence":volume_count,
+                                     "historical_price_revision_alerts":revised-volume_count}
         failure=con.execute("SELECT COUNT(*) FROM fetch_failures").fetchone()[0]
         snapshots=con.execute(
             "SELECT id,raw,payload_sha256 FROM source_snapshots ORDER BY id DESC LIMIT 12"
@@ -337,7 +360,11 @@ def main(argv=None)->int:
     args=p.parse_args(argv)
     result=capture(args.db) if args.capture else inspect(args.db)
     print(json.dumps(result,ensure_ascii=False))
-    return (2 if args.capture and result["status"]!="STOCK_PUBLIC_DAILY_DATA_CAPTURED_NO_TRADING"
+    accepted_capture=(
+        "STOCK_PUBLIC_DAILY_DATA_CAPTURED_NO_TRADING",
+        "STOCK_DAILY_CAPTURED_WITH_VOLUME_REVISIONS_NO_TRADING",
+    )
+    return (2 if args.capture and result["status"] not in accepted_capture
             or args.audit and not result.get("last_12_raw_payload_sha256_verified",False)
             else 0)
 
