@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily post-watchdog local-only backup of clean virtual 90d ledger and SHA receipt
+
+[Timer]
+OnCalendar=*-*-* 11:30:00 Asia/Seoul
+AccuracySec=60s
+Persistent=true
+Unit=freequant-clean-backup.service
+
+[Install]
+WantedBy=timers.target
