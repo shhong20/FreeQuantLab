@@ -24,7 +24,8 @@ from .ops_integrity import RUNTIMES, SERVICES, _run
 from .prospective import read_protocol, _canonical
 
 SCHEMA_VERSION = 1
-SERVICES_ALL = {**SERVICES, "freequant-clean-backup.service": "clean"}
+SERVICES_ALL = {**SERVICES, "freequant-clean-backup.service": "clean",
+                "freequant-market-gap-monitor.service": "clean"}
 EVIDENCE_FILES = {
     "core": (
         "ops/isolated_paper_scheduler.json",
