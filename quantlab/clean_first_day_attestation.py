@@ -171,18 +171,38 @@ def attest_first_day(db:str|Path=DEFAULT_DB,protocol:str|Path=DEFAULT_PROTOCOL,
             "first_day_public_quote_evidence":2,
             "real_account_events_attested":6}
 
+def _sync_seal_alerts(alert_db,receipt_dir,alerts):
+    # Never overwrite ordinary independent Watchdog alert state.
+    if not alert_db:
+        return
+    from .watchdog import persist_alert_transitions,deliver_pending,export_alert_history
+    stamp=_utc(None)
+    persist_alert_transitions(alert_db,alerts,now=stamp)
+    deliver_pending(alert_db,toast=False,now=stamp)
+    export_alert_history(alert_db,Path(receipt_dir)/"first-day-alert-history.json",now=stamp)
+
 def main(argv=None)->int:
     p=argparse.ArgumentParser(description="Immutable first-day clean 90d evidence receipt, never trades")
     p.add_argument("--db",default=DEFAULT_DB)
     p.add_argument("--protocol",default=DEFAULT_PROTOCOL)
     p.add_argument("--receipt-dir",default=DEFAULT_RECEIPT_DIR)
+    p.add_argument("--alert-db",default=None)
     args=p.parse_args(argv)
     try:
         result=attest_first_day(args.db,args.protocol,args.receipt_dir)
+        if result["status"]=="FIRST_DAY_COMPLETE_VERIFIED_NO_PERFORMANCE_CLAIM":
+            _sync_seal_alerts(args.alert_db,args.receipt_dir,[])
         print(json.dumps(result,sort_keys=True,ensure_ascii=False))
         return 0
     except (AdmissionError,ValueError,KeyError,FileNotFoundError,
             sqlite3.Error,TypeError,OSError) as exc:
+        try:
+            _sync_seal_alerts(args.alert_db,args.receipt_dir,[{
+                "severity":"critical","code":"CLEAN_FIRST_DAY_SHA_ATTESTATION_BLOCKED",
+                "message":"First-day SHA admission blocked; inspect independent ledger audit."
+            }])
+        except (OSError,RuntimeError,sqlite3.Error,ValueError) as alert_error:
+            print("FIRST_DAY_ALERT_PERSISTENCE_FAILED: "+type(alert_error).__name__,file=sys.stderr)
         print(json.dumps({"status":"FIRST_DAY_ACCEPTANCE_BLOCKED",
                           "cause":type(exc).__name__,
                           "no_retroactive_virtual_events":True,

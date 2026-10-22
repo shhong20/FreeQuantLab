@@ -159,3 +159,47 @@ def test_change_between_hash_and_seal_fails_closed(cohort,tmp_path,monkeypatch):
     with pytest.raises(AdmissionError,match="changed before receipt"):
         attest_first_day(db,manifest,dest,now=OPEN)
     assert not dest.exists()
+
+
+def test_firstday_sha_alert_is_separate_deduplicated_and_resolved(cohort,tmp_path,monkeypatch):
+    import quantlab.clean_first_day_attestation as att
+    db,manifest=cohort
+    monkeypatch.setattr(att,"_utc",lambda now=None:OPEN)
+    state=tmp_path/"dedicated-alerts.db"
+    out=tmp_path/"first-day"
+    args=["--db",str(db),"--protocol",str(manifest),
+          "--receipt-dir",str(out),"--alert-db",str(state)]
+    assert att.main(args)==2
+    assert att.main(args)==2
+    with sqlite3.connect(state) as con:
+        assert con.execute("SELECT count(*) FROM active_alerts").fetchone()[0]==1
+        assert con.execute("SELECT count(*) FROM notification_events WHERE event_kind='triggered'").fetchone()[0]==1
+    assert not (out/"first-day-2026-10-22.json").exists()
+    record(db,manifest)
+    assert att.main(args)==0
+    with sqlite3.connect(state) as con:
+        assert con.execute("SELECT count(*) FROM active_alerts").fetchone()[0]==0
+        assert con.execute("SELECT count(*) FROM notification_events WHERE event_kind='resolved'").fetchone()[0]==1
+    assert json.loads((out/"first-day-alert-history.json").read_text())["events"][0]["kind"]=="resolved"
+    assert (out/"first-day-2026-10-22.json").is_file()
+
+
+def test_firstday_waiting_does_not_create_alert_files(cohort,tmp_path,monkeypatch):
+    import quantlab.clean_first_day_attestation as att
+    db,manifest=cohort
+    monkeypatch.setattr(att,"_utc",lambda now=None:PRE)
+    state=tmp_path/"dedicated-alerts.db"
+    out=tmp_path/"first-day"
+    assert att.main(["--db",str(db),"--protocol",str(manifest),
+                     "--receipt-dir",str(out),"--alert-db",str(state)])==0
+    assert not state.exists()
+    assert not out.exists()
+
+
+def test_service_firstday_alerts_are_separate_from_cohort_alerts():
+    root=Path(__file__).resolve().parents[1]
+    txt=(root/"deploy/systemd/freequant-clean-watchdog.service").read_text()
+    stage=next(x for x in txt.splitlines()
+               if x.startswith("ExecStart=") and "quantlab.clean_first_day_attestation" in x)
+    assert "--alert-db /home/hong/apps/FreeQuantLab/state/clean-first-day-alerts.db" in stage
+    assert "quantlab.clean_cohort" in txt
