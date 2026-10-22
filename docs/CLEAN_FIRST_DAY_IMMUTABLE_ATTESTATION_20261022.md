@@ -52,3 +52,7 @@ journalctl --user -u freequant-clean-watchdog.service -n 25 --no-pager
 **2026-10-23 10:50 KST 이후**에는 아래를 반드시 실데이터로 검증해야 한다: 실제 사건 수 6, 실제 Upbit 공공 ticker 원본 종목별 하나씩, `shadow_events`·`shadow_quote_evidence`의 원장/인과성 품질, SHA 봉인 영수증 생성, 동일 자료 재실행 무변경, 실주문0/모델승격 불가, 별도 일반 코인 원장 불변.
 
 90일 평가는 **2027-01-20 09:00 KST** 전에 산출·승격하지 않는다.
+
+## 첫날 SHA 승인 실패의 독립 경고 채널
+
+SHA 봉인 단계만 실패해도 독립 `clean-first-day-alerts.db`에 `CLEAN_FIRST_DAY_SHA_ATTESTATION_BLOCKED` 경고가 저장된다. 24시간 이내 재실행 중복은 제거하고, 검증을 통과한 후에만 자동 해제한다. 일반 `clean-watchdog.db`의 활성 경고는 수정하지 않는다. 별도 감사 이력은 `reports/clean-daily/first-day/first-day-alert-history.json`에 출력한다. 이는 Windows 토스트 성공을 주장하지 않는 로컬 경고 원장이다.
