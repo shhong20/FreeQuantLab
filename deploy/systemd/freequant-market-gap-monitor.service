@@ -1,0 +1,18 @@
+[Unit]
+Description=FreeQuantLab independent rolling 24h market slot-gap incident transitions
+After=freequant-microstructure-audit.service freequant-websocket-audit.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/hong/apps/FreeQuantLab-clean-runtime
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.market_gap_alerts
+TimeoutStartSec=60
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hong/apps/FreeQuantLab/state /home/hong/apps/FreeQuantLab/reports
+StandardOutput=journal
+StandardError=journal
