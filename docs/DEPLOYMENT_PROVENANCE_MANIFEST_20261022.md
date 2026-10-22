@@ -47,3 +47,9 @@ cd /home/hong/apps/FreeQuantLab-clean-runtime
 ## 남은 P1 작업
 
 현재 구현은 **배포 상태 고정과 드리프트 탐지**이며, 시스템 전체의 무중단 원자적 전환/롤백 실행 엔진이 아니다. 기능별 단계적 롤아웃·복원 실패 처리·모델 바이너리 해시·멀티호스트 증거 보관은 [Issue #65](https://github.com/shhong20/FreeQuantLab/issues/65)에서 후속 개발해야 한다. 이미 시작한 90일 평가 규칙은 소급 변경하지 않는다.
+
+## Qlib frozen model binary provenance (2026-10-22 follow-up)
+
+배포 지문은 이제 BTC·ETH의 `state/qlib_models/KRW-{BTC,ETH}`와 `models/qlib/KRW-{BTC,ETH}` 두 위치에서 각각 `model.txt`, `golden.json`, `manifest.json` 파일의 원시 SHA-256을 기록한다. 모델 바이너리 해시는 manifest `model_sha256`과 직접 대조하고, golden 예측 기준 데이터는 기존 Qlib `prospective._canonical` 방식으로 직렬화한 SHA를 manifest `golden_sha256`과 대조한다. `features.py` 코드 해시·주문/자동 승격/재학습 금지 플래그도 검증한다.
+
+어느 한 모델이 수정되거나 두 복제본이 일치하지 않으면 새 baseline 수집과 승인 지문 검증이 실패한다. Qlib 모델을 실제로 추론해 정확도·수익성을 확인한 것은 아니며, Exaone 로컬 모델 가중치는 이 명령의 대상이 아니다. 따라서 전체 모델 검증 상태는 계속 `models_full_binary_sha256_verified=false`를 유지하고 별도 `frozen_qlib_artifact_sha256_verified=true`를 표시한다. 운영 변경을 승인/롤백하는 기능은 추가하지 않는다.

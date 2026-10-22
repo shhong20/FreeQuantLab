@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from quantlab.deploy_contract import (
-    _fingerprint, _source, check_deployment, inspect_deployment, save_baseline,
+    _fingerprint, _source, check_deployment, inspect_deployment, save_baseline, qlib_artifact_inventory,
 )
 
 
@@ -61,7 +61,7 @@ def snapshot(tmp_path,*,dirty=False,failed=False,altered_command=False):
         roots=roots,services={"core.service":"core","clean.service":"clean"},
         evidence={"core":(),"clean":()},state={"core":("state/shadow.db",)},
         shared_state=state,
-        runner=source(roots,units,dirty=dirty,failed=failed,
+        qlib_artifacts=False,runner=source(roots,units,dirty=dirty,failed=failed,
                       altered_command=altered_command),
     )
     return report,roots,units,state
@@ -76,7 +76,7 @@ def test_healthy_capture_verify_without_promotion(tmp_path):
     current=inspect_deployment(
         roots=roots,services={"core.service":"core","clean.service":"clean"},
         evidence={"core":(),"clean":()},state={"core":("state/shadow.db",)},
-        shared_state=state,runner=source(roots,units))
+        shared_state=state,qlib_artifacts=False,runner=source(roots,units))
     assert check_deployment(original,current)["status"]=="DEPLOYMENT_IDENTITY_MATCH"
     assert not original["safe_to_autodeploy"]
     assert not original["models_full_binary_sha256_verified"]
@@ -89,7 +89,7 @@ def test_failed_audit_unit_is_not_release_config_drift(tmp_path):
     current=inspect_deployment(
         roots=roots,services={"core.service":"core","clean.service":"clean"},
         evidence={"core":(),"clean":()},state={"core":("state/shadow.db",)},
-        shared_state=state,runner=source(roots,units,failed=True))
+        shared_state=state,qlib_artifacts=False,runner=source(roots,units,failed=True))
     assert check_deployment(baseline,current)["drift"]==[]
     assert current["observed_service_results"]["core.service"]["exit_code"]=="2"
 
@@ -99,7 +99,7 @@ def test_detect_unit_exec_start_tampering(tmp_path):
     current=inspect_deployment(
         roots=roots,services={"core.service":"core","clean.service":"clean"},
         evidence={"core":(),"clean":()},state={"core":("state/shadow.db",)},
-        shared_state=state,runner=source(roots,units,altered_command=True))
+        shared_state=state,qlib_artifacts=False,runner=source(roots,units,altered_command=True))
     assert "SERVICE_DEFINITION_CHANGED:core.service" in check_deployment(baseline,current)["drift"]
 
 
@@ -115,7 +115,7 @@ def test_source_unit_file_drift_is_detected(tmp_path):
     current=inspect_deployment(
         roots=roots,services={"core.service":"core","clean.service":"clean"},
         evidence={"core":(),"clean":()},state={"core":("state/shadow.db",)},
-        shared_state=state,runner=source(roots,units))
+        shared_state=state,qlib_artifacts=False,runner=source(roots,units))
     report=check_deployment(baseline,current)
     assert "UNIT_TEMPLATE_DRIFT:clean.service" in report["drift"]
 
@@ -132,3 +132,51 @@ def test_argv_ignore_runtime_pid():
     a="ExecStart={ path=/bin/true ; argv[]=/bin/true ; ignore_errors=no ; start_time=[now] ; pid=123 }"
     b=a.replace("now","yesterday").replace("123","8888")
     assert _source(a)==_source(b)
+
+
+def _fake_models(tmp_path):
+    from quantlab.prospective import _canonical
+    from hashlib import sha256
+    roots=(tmp_path/"state",tmp_path/"mirror")
+    features=tmp_path/"features.py"
+    features.write_bytes(b"model feature formula v1")
+    f_sha=sha256(features.read_bytes()).hexdigest()
+    for root in roots:
+        for market in ("KRW-BTC","KRW-ETH"):
+            d=root/market
+            d.mkdir(parents=True)
+            model=(market+" frozen model").encode()
+            golden={"market":market,"predictions":[0.4,0.5]}
+            (d/"model.txt").write_bytes(model)
+            (d/"golden.json").write_bytes(_canonical(golden)+b"\n")
+            payload={"asset":{"symbol":market},"model_sha256":sha256(model).hexdigest(),
+                     "golden_sha256":sha256(_canonical(golden)).hexdigest(),
+                     "features_py_sha256":f_sha,
+                     "real_orders_enabled":False,"promotion_enabled":False,
+                     "retraining_enabled":False}
+            payload["sha256"]=sha256(_canonical(payload)).hexdigest()
+            (d/"manifest.json").write_bytes(_canonical(payload)+b"\n")
+    return roots,features
+
+
+def test_qlib_binary_golden_and_duplicate_artifacts_attested(tmp_path):
+    roots,features=_fake_models(tmp_path)
+    report=qlib_artifact_inventory(primary=roots[0],mirror=roots[1],features=features)
+    assert report["source_and_mirror_match"]
+    assert set(report["models"])=={"KRW-BTC","KRW-ETH"}
+    assert not report["exaone_weights_attested"]
+
+
+def test_qlib_mirror_mutation_rejected_without_model_execution(tmp_path):
+    roots,features=_fake_models(tmp_path)
+    binary=roots[1]/"KRW-BTC"/"model.txt"
+    binary.write_bytes(binary.read_bytes()+b"tamper")
+    with pytest.raises(ValueError,match="manifest identity"):
+        qlib_artifact_inventory(primary=roots[0],mirror=roots[1],features=features)
+
+
+def test_qlib_feature_source_change_rejected(tmp_path):
+    roots,features=_fake_models(tmp_path)
+    features.write_bytes(b"unexpected formula")
+    with pytest.raises(ValueError,match="manifest identity"):
+        qlib_artifact_inventory(primary=roots[0],mirror=roots[1],features=features)
