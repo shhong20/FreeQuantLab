@@ -127,44 +127,44 @@ def attest_first_day(db:str|Path=DEFAULT_DB,protocol:str|Path=DEFAULT_PROTOCOL,
         return {**base,"status":"WAITING_FIRST_DUE_NOT_YET_MATURE",
                 "first_day_due_after_utc":due_at.isoformat(),
                 "receipt_created":False,"real_account_events_attested":0}
+    # A single live read-only guard spans the entire independent audit,
+    # evidence selection, hash computation, and receipt creation.
+    # PRAGMA data_version on one connection detects commits by other
+    # connections even while the queries themselves use separate snapshots.
     with closing(_read_db(source)) as guard:
-        version_before=guard.execute("PRAGMA data_version").fetchone()[0]
+        revision=guard.execute("PRAGMA data_version").fetchone()[0]
         report=inspect_clean(source,manifest_file,now=current)
-        if guard.execute("PRAGMA data_version").fetchone()[0]!=version_before:
+        if guard.execute("PRAGMA data_version").fetchone()[0]!=revision:
             raise AdmissionError("Clean ledger changed during independent audit")
-    if (report["status"]!="PASS" or report["issues"]
-        or report["recorded_due_account_days"]<6
-        or report["invalid_due_account_days"]!=0
-        or report["quote_proxy_status"]!="PASS"
-        or report["ledger_audit_status"]!="PASS"):
-        raise AdmissionError(
-            "First completed due day did not pass independent clean Watchdog")
-    with closing(_read_db(source)) as guard:
-        version_check=guard.execute("PRAGMA data_version").fetchone()[0]
+        if (report["status"]!="PASS" or report["issues"]
+            or report["recorded_due_account_days"]<6
+            or report["invalid_due_account_days"]!=0
+            or report["quote_proxy_status"]!="PASS"
+            or report["ledger_audit_status"]!="PASS"):
+            raise AdmissionError(
+                "First completed due day did not pass independent clean Watchdog")
         events,quotes=_first_day_snapshot(source,first.isoformat(),plan)
-        if guard.execute("PRAGMA data_version").fetchone()[0]!=version_check:
+        if guard.execute("PRAGMA data_version").fetchone()[0]!=revision:
             raise AdmissionError("Clean ledger changed during evidence snapshot")
-    doc={**base,"status":"FIRST_DAY_COMPLETE_VERIFIED_NO_PERFORMANCE_CLAIM",
-         "first_day_account_day_events":6,
-         "first_day_public_quote_evidence":2,
-         "first_day_events_sha256":_digest(events),
-         "first_day_public_quotes_sha256":_digest(quotes),
-         "registered_account_set_sha256":_digest(
-             [{"track_id":a["track_id"],"symbol":a["symbol"],
-               "strategy":a["label"]} for a in
-              sorted(plan["account_set"],key=lambda a:a["track_id"])]),
-         "public_last_trade_is_not_an_executable_fill":True,
-         "receipts_are_not_an_90d_strategy_approval":True,
-         "read_only_shadow_evidence":True}
-    dest=Path(receipt_dir).absolute()/("first-day-"+first.isoformat()+".json")
-    with closing(_read_db(source)) as guard:
-        last_version=guard.execute("PRAGMA data_version").fetchone()[0]
+        doc={**base,"status":"FIRST_DAY_COMPLETE_VERIFIED_NO_PERFORMANCE_CLAIM",
+             "first_day_account_day_events":6,
+             "first_day_public_quote_evidence":2,
+             "first_day_events_sha256":_digest(events),
+             "first_day_public_quotes_sha256":_digest(quotes),
+             "registered_account_set_sha256":_digest(
+                 [{"track_id":a["track_id"],"symbol":a["symbol"],
+                   "strategy":a["label"]} for a in
+                  sorted(plan["account_set"],key=lambda a:a["track_id"])]),
+             "public_last_trade_is_not_an_executable_fill":True,
+             "receipts_are_not_an_90d_strategy_approval":True,
+             "read_only_shadow_evidence":True}
+        dest=Path(receipt_dir).absolute()/("first-day-"+first.isoformat()+".json")
         latest_events,latest_quotes=_first_day_snapshot(source,first.isoformat(),plan)
         if (_digest(latest_events)!=doc["first_day_events_sha256"] or
             _digest(latest_quotes)!=doc["first_day_public_quotes_sha256"] or
-            guard.execute("PRAGMA data_version").fetchone()[0]!=last_version):
+            guard.execute("PRAGMA data_version").fetchone()[0]!=revision):
             raise AdmissionError("Clean ledger evidence changed before receipt")
-    digest,created=_write_once(dest,doc)
+        digest,created=_write_once(dest,doc)
     return {**base,"status":doc["status"],"receipt_path":str(dest),
             "receipt_sha256":digest,"receipt_created":created,
             "first_day_account_day_events":6,
