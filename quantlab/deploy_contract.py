@@ -21,7 +21,7 @@ import sys
 from typing import Callable
 
 from .ops_integrity import RUNTIMES, SERVICES, _run
-from .prospective import read_protocol
+from .prospective import read_protocol, _canonical
 
 SCHEMA_VERSION = 1
 SERVICES_ALL = {**SERVICES, "freequant-clean-backup.service": "clean"}
@@ -79,6 +79,49 @@ def _show(unit: str, runner: Callable) -> dict:
     return fields
 
 
+def qlib_artifact_inventory(*, primary: Path | None = None,
+                            mirror: Path | None = None,
+                            features: Path | None = None) -> dict:
+    """SHA-check actual BTC/ETH Qlib model artifacts and frozen mirror."""
+    primary = SHARED_STATE / "qlib_models" if primary is None else primary
+    mirror = RUNTIMES["core"] / "models/qlib" if mirror is None else mirror
+    features = RUNTIMES["core"] / "quantlab/features.py" if features is None else features
+    feature_sha = _sha(features.read_bytes())
+    models = {}
+    for market in ("KRW-BTC", "KRW-ETH"):
+        copies = []
+        for root in (primary, mirror):
+            folder = (root / market).resolve(strict=True)
+            if not folder.is_dir() or not folder.is_relative_to(root.resolve(strict=True)):
+                raise ValueError("Model folder escaped pinned artifact directory")
+            fingerprints = {}
+            for name in ("manifest.json", "golden.json", "model.txt"):
+                file = folder / name
+                if file.is_symlink() or not file.is_file():
+                    raise ValueError("Missing or symlinked frozen Qlib file")
+                fingerprints[name] = _sha(file.read_bytes())
+            manifest = json.loads((folder / "manifest.json").read_text("utf-8"))
+            golden = json.loads((folder / "golden.json").read_text("utf-8"))
+            if (manifest.get("model_sha256") != fingerprints["model.txt"] or
+                manifest.get("golden_sha256") != _sha(_canonical(golden)) or
+                manifest.get("sha256") != _sha(_canonical({
+                    k: v for k, v in manifest.items() if k != "sha256"})) or
+                manifest.get("features_py_sha256") != feature_sha or
+                manifest.get("asset", {}).get("symbol") != market or
+                manifest.get("real_orders_enabled") is not False or
+                manifest.get("promotion_enabled") is not False or
+                manifest.get("retraining_enabled") is not False):
+                raise ValueError("Frozen Qlib model manifest identity mismatch")
+            copies.append(fingerprints)
+        if copies[0] != copies[1]:
+            raise ValueError("Qlib original and frozen mirror differ")
+        models[market] = copies[0]
+    return {"models":models, "features_py_sha256":feature_sha,
+            "source_and_mirror_match": True,
+            "model_inference_validated_by_this_command": False,
+            "exaone_weights_attested": False}
+
+
 def _sqlite_schema(path: Path) -> dict:
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -102,7 +145,8 @@ def inspect_deployment(*, roots: dict[str, Path] | None = None,
                        evidence: dict[str, tuple[str, ...]] | None = None,
                        state: dict[str, tuple[str, ...]] | None = None,
                        shared_state: Path | None = None,
-                       runner: Callable = subprocess.run) -> dict:
+                       runner: Callable = subprocess.run,
+                       qlib_artifacts: bool = True) -> dict:
     roots = RUNTIMES if roots is None else roots
     services = SERVICES_ALL if services is None else services
     evidence = EVIDENCE_FILES if evidence is None else evidence
@@ -165,6 +209,8 @@ def inspect_deployment(*, roots: dict[str, Path] | None = None,
                 "units": {k: {j: v for j, v in item.items()
                               if not j.startswith("observed_")}
                           for k, item in units.items()}}
+    if qlib_artifacts:
+        identity["frozen_qlib_artifacts"] = qlib_artifact_inventory()
     return {
         "schema": SCHEMA_VERSION,
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -176,6 +222,7 @@ def inspect_deployment(*, roots: dict[str, Path] | None = None,
             for u, data in units.items()},
         "safe_to_autodeploy": False,
         "models_full_binary_sha256_verified": False,
+        "frozen_qlib_artifact_sha256_verified": qlib_artifacts,
         "source_database_contents_attested": False,
         "real_order_execution_enabled": False,
         "automatic_strategy_promotion_enabled": False,
@@ -195,6 +242,8 @@ def check_deployment(report: dict, current: dict) -> dict:
     for lane in sorted(set(expected["lanes"]) | set(actual["lanes"])):
         if expected["lanes"].get(lane) != actual["lanes"].get(lane):
             drift.append("LANE_IDENTITY_CHANGED:" + lane)
+    if expected.get("frozen_qlib_artifacts") != actual.get("frozen_qlib_artifacts"):
+        drift.append("FROZEN_QLIB_MODEL_ARTIFACT_CHANGED")
     if set(expected["units"]) != set(actual["units"]):
         drift.append("SERVICE_SET_CHANGED")
     for unit in sorted(set(expected["units"]) | set(actual["units"])):
