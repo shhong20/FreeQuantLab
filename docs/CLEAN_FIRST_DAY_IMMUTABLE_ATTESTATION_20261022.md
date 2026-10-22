@@ -56,3 +56,20 @@ journalctl --user -u freequant-clean-watchdog.service -n 25 --no-pager
 ## 첫날 SHA 승인 실패의 독립 경고 채널
 
 SHA 봉인 단계만 실패해도 독립 `clean-first-day-alerts.db`에 `CLEAN_FIRST_DAY_SHA_ATTESTATION_BLOCKED` 경고가 저장된다. 24시간 이내 재실행 중복은 제거하고, 검증을 통과한 후에만 자동 해제한다. 일반 `clean-watchdog.db`의 활성 경고는 수정하지 않는다. 별도 감사 이력은 `reports/clean-daily/first-day/first-day-alert-history.json`에 출력한다. 이는 Windows 토스트 성공을 주장하지 않는 로컬 경고 원장이다.
+
+## 2026-10-22 후속: 감사와 SHA 봉인 사이 읽기 연결 교체 간극 제거
+
+첫 구현은 감사, 최초 증거 조회, 최종 재검증마다 별도 `PRAGMA data_version`
+감시 연결을 열어 그 사이 순간의 외부 SQLite 커밋을 놓칠 수 있었다.
+이제 **하나의 읽기 전용 감시 연결을 독립 감사 시작부터 원본 6계좌·2호가
+검증과 O_EXCL SHA 영수증 작성까지 계속 유지**하고, 이전에 읽은 동일
+`data_version` 기준으로 각 검증 경계에서 외부 커밋을 거부한다.
+
+변경 감시 연결이 닫히기 전에 전체 검증이 진행되며, 이 수정은 운영
+원장에 잠금을 쓰거나 이벤트를 생성하지 않는다. 실제 SQLite 외부
+쓰기 발생을 감사 직후·증거 조회 직전에 주입하는 회귀 테스트가
+미래 인증 파일 생성을 거부하는지 확인한다.
+
+주의: 이것은 **모든 외부 쓰기와의 원자적 트랜잭션 격리나 외부
+타임스탬프 인증을 의미하지 않는다**. 최종 확인 이후 발생한 원본 변경은
+이어지는 독립 감사와 영수증 재검증 과정에서 별도 조사 대상이 된다.

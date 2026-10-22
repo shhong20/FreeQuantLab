@@ -203,3 +203,39 @@ def test_service_firstday_alerts_are_separate_from_cohort_alerts():
                if x.startswith("ExecStart=") and "quantlab.clean_first_day_attestation" in x)
     assert "--alert-db /home/hong/apps/FreeQuantLab/state/clean-first-day-alerts.db" in stage
     assert "quantlab.clean_cohort" in txt
+
+
+def test_commit_between_independent_audit_and_evidence_is_not_sealed(cohort,tmp_path,monkeypatch):
+    """A commit before the next read connection opens used to evade per-stage guards."""
+    import quantlab.clean_first_day_attestation as att
+    db,manifest=cohort
+    record(db,manifest)
+    audit=att.inspect_clean
+    read=att._read_db
+    audit_finished=False
+    mutated=False
+
+    def after_audit(*args,**kwargs):
+        nonlocal audit_finished
+        report=audit(*args,**kwargs)
+        audit_finished=True
+        return report
+
+    def read_after_external_commit(path):
+        nonlocal mutated
+        if audit_finished and not mutated:
+            mutated=True
+            with sqlite3.connect(db) as con:
+                con.execute(
+                    "UPDATE shadow_quote_evidence "
+                    "SET public_ticker_price=public_ticker_price+1 "
+                    "WHERE symbol='KRW-ETH'")
+        return read(path)
+
+    monkeypatch.setattr(att,"inspect_clean",after_audit)
+    monkeypatch.setattr(att,"_read_db",read_after_external_commit)
+    receipt=tmp_path/"first-day"
+    with pytest.raises(AdmissionError,match="changed during evidence snapshot"):
+        attest_first_day(db,manifest,receipt,now=OPEN)
+    assert mutated
+    assert not receipt.exists()
