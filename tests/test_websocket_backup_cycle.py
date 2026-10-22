@@ -147,3 +147,61 @@ def test_service_isolated_no_sudo_and_reboot_catchup():
     assert "OnBootSec=15min" in timer and "Persistent=true" in timer
     assert "freequant-shadow" not in service
     assert "sudo " not in service
+
+
+def test_new_completed_websocket_session_during_verification_is_bounded_warning(tmp_path,monkeypatch):
+    live,source,dest,reports=fixture(tmp_path,monkeypatch)
+    actual_mirror(source_root=source,dest_root=dest,require_other_mount=False)
+    original_mirror=cycle.mirror
+    original_gap=cycle.measure_gap
+    def concurrent_finish(**kwargs):
+        result=original_mirror(**kwargs)
+        # One NEW completed session arrived while the verified restore ran.
+        add_session(live,number=2)
+        return result
+    def simulated_realtime_gap(**kwargs):
+        measured=original_gap(**kwargs)  # real source/mirror watermark checks
+        # Synthetic 2026-10-21 fixture timestamps, NOT real-time WSL clock.
+        measured["mirror_recovery_point_age_seconds"]=121
+        measured["mirror_lag_versus_latest_completed_seconds"]=60
+        return measured
+    monkeypatch.setattr(cycle,"mirror",concurrent_finish)
+    monkeypatch.setattr(cycle,"measure_gap",simulated_realtime_gap)
+    result=cycle.run_backup_cycle(live_db=live,archive_root=source,
+                                  mirror_root=dest,report_root=reports,perform=True)
+    assert result["status"]=="MIRROR_RECOVERED_WITH_NEW_SESSIONS_AFTER_SNAPSHOT"
+    assert result["completed_sessions_at_cycle_start"]==2
+    assert result["preexisting_finalized_sessions_all_mirrored"]
+    assert result["fresh_capture_lag_only"] is True
+    assert result["unbacked_finalized_sessions_at_receipt"]==1
+    assert verify_chain(dest)["sessions"]==2
+    assert json.loads(Path(result["receipt_path"]).read_text())["unbacked_finalized_sessions_at_receipt"]==1
+
+
+def test_old_backlog_does_not_pass_fresh_snapshot_rule(tmp_path,monkeypatch):
+    live,source,dest,reports=fixture(tmp_path,monkeypatch)
+    actual_mirror(source_root=source,dest_root=dest,require_other_mount=False)
+    for i in range(2,8):
+        add_session(live,number=i)
+    result=cycle.run_backup_cycle(live_db=live,archive_root=source,
+                                  mirror_root=dest,report_root=reports,
+                                  max_batches=1,max_sessions=2,perform=True)
+    assert result["status"]=="MIRROR_RECOVERED_WITH_NEW_SESSIONS_AFTER_SNAPSHOT"
+    assert result["preexisting_finalized_sessions_all_mirrored"] is False
+    assert result["fresh_capture_lag_only"] is False
+    assert result["unbacked_finalized_sessions_at_receipt"]==4
+
+
+def test_cli_exit_zero_only_when_new_small_fresh_and_cryptographically_restored(monkeypatch,capsys):
+    def base():
+        return {"status":"MIRROR_RECOVERED_WITH_NEW_SESSIONS_AFTER_SNAPSHOT",
+                "fresh_capture_lag_only":True,"unbacked_finalized_sessions_at_receipt":1}
+    monkeypatch.setattr(cycle,"run_backup_cycle",lambda **kwargs:base())
+    assert cycle.main(["--run"])==0
+    assert json.loads(capsys.readouterr().out)["unbacked_finalized_sessions_at_receipt"]==1
+    monkeypatch.setattr(cycle,"run_backup_cycle",lambda **kwargs:{**base(),"fresh_capture_lag_only":False})
+    assert cycle.main(["--run"])==2
+    monkeypatch.setattr(cycle,"run_backup_cycle",lambda **kwargs:{
+        **base(),"status":"MIRROR_RECOVERED_NO_BACKLOG_AT_CHECK",
+        "unbacked_finalized_sessions_at_receipt":0})
+    assert cycle.main(["--run"])==0
