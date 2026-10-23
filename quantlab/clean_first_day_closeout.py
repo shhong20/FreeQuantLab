@@ -26,7 +26,8 @@ def inspect_closeout(db: str | Path = DEFAULT_DB,
                      protocol: str | Path = DEFAULT_PROTOCOL,
                      receipt_dir: str | Path = DEFAULT_RECEIPT_DIR,
                      backup_dir: str | Path = DEFAULT_TARGET,
-                     *, now: datetime | None = None) -> dict:
+                     *, watchdog_report_dir: str | Path = "/home/hong/apps/FreeQuantLab/reports/clean-daily",
+                     now: datetime | None = None) -> dict:
     current = _utc(now)
     plan = read_protocol(protocol)
     first = date.fromisoformat(plan["first_eligible_decision_utc"])
@@ -48,16 +49,40 @@ def inspect_closeout(db: str | Path = DEFAULT_DB,
     }
     if current < due:
         return {**base, "status": "WAITING_FIRST_DAY_MATURITY"}
+    if current < watchdog:
+        return {**base, "status": "WAITING_INDEPENDENT_WATCHDOG"}
+    evidence_report = Path(watchdog_report_dir) / ((first + timedelta(days=1)).isoformat() + ".json")
+    if not evidence_report.is_file():
+        return {**base, "status": "BLOCKED_INDEPENDENT_WATCHDOG_REPORT_MISSING"}
+    prior = json.loads(evidence_report.read_text("utf-8"))
+    report_time = datetime.fromisoformat(prior["checked_at_utc"])
+    if report_time.tzinfo is None:
+        raise AdmissionError("Watchdog report has no time zone")
+    checked = report_time.astimezone(timezone.utc)
+    if (checked < watchdog or checked > current or
+        prior.get("status") != "PASS" or prior.get("issues") or
+        prior.get("protocol_sha256") != plan["sha256"] or
+        prior.get("expected_due_account_days") != 6 or
+        prior.get("recorded_due_account_days") != 6 or
+        prior.get("invalid_due_account_days") != 0 or
+        prior.get("ledger_audit_status") != "PASS" or
+        prior.get("quote_proxy_status") != "PASS"):
+        raise AdmissionError("Independent post-10:50 watchdog report not proven")
     receipt = Path(receipt_dir) / ("first-day-" + first.isoformat() + ".json")
     if not receipt.is_file():
-        return {**base, "status": (
-            "WAITING_INDEPENDENT_WATCHDOG" if current < watchdog
-            else "BLOCKED_FIRST_DAY_RECEIPT_MISSING")}
+        return {**base, "status": "BLOCKED_FIRST_DAY_RECEIPT_MISSING"}
     doc = json.loads(receipt.read_text("utf-8"))
+    expected_set = _digest([
+        {"track_id": a["track_id"], "symbol": a["symbol"], "strategy": a["label"]}
+        for a in sorted(plan["account_set"], key=lambda item: item["track_id"])
+    ])
     if (doc.get("status") != "FIRST_DAY_COMPLETE_VERIFIED_NO_PERFORMANCE_CLAIM" or
         doc.get("protocol_sha256") != plan["sha256"] or
+        doc.get("registered_account_set_sha256") != expected_set or
         doc.get("first_day_account_day_events") != 6 or
-        doc.get("first_day_public_quote_evidence") != 2):
+        doc.get("first_day_public_quote_evidence") != 2 or
+        doc.get("real_broker_orders") != 0 or
+        doc.get("automatic_strategy_promotion") is not False):
         raise AdmissionError("Existing first-day receipt is invalid")
     report = inspect_clean(db, protocol, now=current)
     if (report["status"] != "PASS" or report["issues"] or
@@ -69,6 +94,9 @@ def inspect_closeout(db: str | Path = DEFAULT_DB,
         doc["first_day_public_quotes_sha256"] != _digest(quotes)):
         raise AdmissionError("Live first-day evidence differs from immutable receipt")
     digest = _hash(receipt)
+    if current < backup_due:
+        return {**base, "status": "WAITING_POST_AUDIT_BACKUP",
+                "first_day_live_receipt_verified": True}
     root = Path(backup_dir)
     snapshots = sorted(root.glob("snapshot-*"), reverse=True) if root.is_dir() else []
     matching = None
@@ -77,8 +105,11 @@ def inspect_closeout(db: str | Path = DEFAULT_DB,
         if not manifest_file.is_file():
             continue
         manifest = json.loads(manifest_file.read_text("utf-8"))
-        captured = datetime.fromisoformat(manifest["captured_at_utc"]).astimezone(timezone.utc)
-        if captured < due:
+        captured_raw = datetime.fromisoformat(manifest["captured_at_utc"])
+        if captured_raw.tzinfo is None:
+            raise BackupError("Backup manifest timestamp has no time zone")
+        captured = captured_raw.astimezone(timezone.utc)
+        if captured < backup_due or captured > current:
             continue
         # A later attempted backup missing the receipt must not be hidden
         # by falling back to an older successful snapshot.
@@ -118,10 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--protocol", default=DEFAULT_PROTOCOL)
     parser.add_argument("--receipt-dir", default=DEFAULT_RECEIPT_DIR)
     parser.add_argument("--backup-dir", default=DEFAULT_TARGET)
+    parser.add_argument("--watchdog-report-dir", default="/home/hong/apps/FreeQuantLab/reports/clean-daily")
     options = parser.parse_args(argv)
     try:
         result = inspect_closeout(options.db, options.protocol,
-                                  options.receipt_dir, options.backup_dir)
+                                  options.receipt_dir, options.backup_dir,
+                                  watchdog_report_dir=options.watchdog_report_dir)
         print(json.dumps(result, sort_keys=True, ensure_ascii=False))
         return 0 if result["status"] == "LOCAL_FIRST_DAY_RECEIPT_AND_BACKUP_MATCH" else 2
     except (OSError, ValueError, KeyError, AdmissionError, BackupError,
