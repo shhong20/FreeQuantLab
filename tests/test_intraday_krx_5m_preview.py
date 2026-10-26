@@ -151,3 +151,28 @@ def test_input_plan_rejects_unsafe_dates_and_symbols(tmp_path,symbols,sessions):
         build(source_root=tmp_path/"source",symbols=symbols,sessions=sessions,
               out_dir=tmp_path/"out")
     assert not (tmp_path/"out").exists()
+
+
+def test_future_strategy_engine_rejects_three_unapproved_sessions(tmp_path):
+    import pandas as pd
+    from quantlab.intraday_research import validate, IntradayDataError
+
+    source=tmp_path/"source"
+    for day in DAYS:
+        make_source(source,session=day)
+    result=build(source_root=source,symbols=("005930",),sessions=DAYS,
+                 out_dir=tmp_path/"research")["summary"]
+    assert result["walkforward_return_calculated"] is False
+    # Existing independent strategy engine rejects even a complete 3-day
+    # candidate; converted bars are *not* silently auto-promoted.
+    path=tmp_path/"research"/"005930_candidate_5m_UNVERIFIED.json"
+    raw=json.loads(path.read_bytes())
+    with pytest.raises(IntradayDataError,match="At least 60"):
+        validate(pd.DataFrame(raw),"KRX_STOCK")
+
+
+def test_chronologically_reversed_sessions_are_rejected(tmp_path):
+    with pytest.raises(VenueProbeError,match="chronological"):
+        build(source_root=tmp_path/"source",symbols=("005930",),
+              sessions=("2026-10-23","2026-10-22"),out_dir=tmp_path/"out")
+    assert not (tmp_path/"out").exists()
