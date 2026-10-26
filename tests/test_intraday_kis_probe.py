@@ -130,3 +130,60 @@ def test_short_provider_page_is_recorded_not_silently_completed(monkeypatch):
     assert audit["pagination_stop"] == "short_page_unproven_prior_history"
     assert audit["missing_reference_labels"] > 0
     assert audit["automatic_5min_conversion"] is False
+
+
+def test_provider_error_prints_only_safe_code_never_untrusted_body(monkeypatch):
+    from quantlab import intraday_kis_probe as mod
+    monkeypatch.setenv("KIS_APP_KEY", "SECRET_KEY_EXAMPLE")
+    monkeypatch.setenv("KIS_APP_SECRET", "SECRET_SECRET_EXAMPLE")
+
+    class Rejection:
+        content = json.dumps({
+            "rt_cd": "1", "msg_cd": "EGW00202",
+            "msg1": "ACCOUNT_OR_SECRET_MUST_NOT_BE_LOGGED",
+        }).encode()
+        def raise_for_status(self):
+            return None
+
+    def getter(url, **kw):
+        return Rejection()
+
+    with pytest.raises(KISMinuteError, match=r"msg_cd=EGW00202") as caught:
+        mod.probe_kis(symbol="005930", session=DAY, token="TOKEN_NOT_FOR_OUTPUT",
+                      getter=getter, now=NOW)
+    message = str(caught.value)
+    assert "ACCOUNT_OR_SECRET" not in message
+    assert "TOKEN_NOT_FOR_OUTPUT" not in message
+    assert "SECRET_KEY_EXAMPLE" not in message
+
+    class UntrustedRejection(Rejection):
+        content = json.dumps({
+            "rt_cd": "1", "msg_cd": "TOKEN_NOT_FOR_OUTPUT: unsafe",
+            "msg1": "secret text",
+        }).encode()
+
+    with pytest.raises(KISMinuteError, match=r"msg_cd=UNKNOWN"):
+        mod.probe_kis(symbol="005930", session=DAY, token="TOKEN_NOT_FOR_OUTPUT",
+                      getter=lambda *a, **kw: UntrustedRejection(), now=NOW)
+
+
+def test_cli_shows_controlled_reason_but_not_credentials(monkeypatch, capsys):
+    from quantlab import intraday_kis_probe as mod
+    def fail_capture(**_):
+        raise KISMinuteError("KIS minute required field missing: stck_oprc")
+    monkeypatch.setattr(mod, "capture_kis", fail_capture)
+    with pytest.raises(SystemExit) as caught:
+        mod.main(["--symbol", "005930", "--session", DAY, "--out-dir", "/tmp/unused"])
+    assert caught.value.code == 2
+    err = capsys.readouterr().err
+    assert "KIS minute required field missing: stck_oprc" in err
+    assert "authorization" not in err
+
+    def fail_untrusted(**_):
+        raise OSError("SENSITIVE_FILESYSTEM_PATH_NOT_TO_SHOW")
+    monkeypatch.setattr(mod, "capture_kis", fail_untrusted)
+    with pytest.raises(SystemExit):
+        mod.main(["--symbol", "005930", "--session", DAY, "--out-dir", "/tmp/unused"])
+    err = capsys.readouterr().err
+    assert "OSError" in err
+    assert "SENSITIVE_FILESYSTEM_PATH_NOT_TO_SHOW" not in err
