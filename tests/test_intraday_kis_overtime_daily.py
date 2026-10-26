@@ -191,3 +191,84 @@ def test_equal_venue_gap_and_overtime_volume_still_cannot_certify_scope(tmp_path
     assert record["disposition"] == "NO_AUTOMATIC_VOLUME_REPAIR_OR_BACKTEST"
     assert result["all_krx_volume_gaps_attributed"] is False
     assert result["usable_for_backtesting"] is False
+
+
+def test_real_cli_execute_path_with_mocked_oauth_and_http_regression(
+    tmp_path, monkeypatch, capsys,
+):
+    # A dry-run test cannot catch an undefined index inside the --execute loop.
+    # This test runs the actual production CLI execution path with all
+    # authentication and external network effects replaced by local mocks.
+    import quantlab.intraday_kis_overtime_daily as module
+
+    root=tmp_path/"real_cli_path"
+    monkeypatch.setenv("KIS_APP_KEY", "FAKE_LOCAL_TEST_KEY")
+    monkeypatch.setenv("KIS_APP_SECRET", "FAKE_LOCAL_TEST_SECRET")
+    tokens=[]
+    requests=[]
+    pauses=[]
+    monkeypatch.setattr(module,"_kis_token",lambda: tokens.append("issued") or "FAKE_TOKEN")
+    monkeypatch.setattr(module.time,"sleep",lambda seconds: pauses.append(seconds))
+    def get(url, *, params, key, secret, token, tr_id, getter):
+        assert url == URL
+        assert tr_id == TR_ID
+        assert key == "FAKE_LOCAL_TEST_KEY"
+        assert secret == "FAKE_LOCAL_TEST_SECRET"
+        assert token == "FAKE_TOKEN"
+        requests.append(params["FID_INPUT_ISCD"])
+        return json.dumps(response_overtime()).encode("utf-8")
+    monkeypatch.setattr(module,"_get",get)
+
+    args=["--symbols","005930,000660","--sessions",
+          "2026-10-21,2026-10-22,2026-10-23","--out-dir",str(root),
+          "--execute"]
+    assert module.main(args) == 0
+    output=json.loads(capsys.readouterr().out)
+    assert output["status"] == "SOURCE_ONLY_NO_RECONCILIATION"
+    assert output["newly_requested_symbols"] == 2
+    assert [x["status"] for x in output["results"]] == ["CAPTURED","CAPTURED"]
+    assert requests == ["005930","000660"]
+    assert tokens == ["issued"]
+    assert pauses == [2.0]
+    for symbol in ("005930","000660"):
+        assert _read_snapshot(root,symbol,DAYS)["response_records"] == 3
+    serialized=json.dumps(output)
+    assert "FAKE_LOCAL_TEST_KEY" not in serialized
+    assert "FAKE_LOCAL_TEST_SECRET" not in serialized
+    assert "FAKE_TOKEN" not in serialized
+
+    # Resume should perform no token issuance and no HTTP GET.
+    monkeypatch.setattr(module,"_kis_token",
+                        lambda: pytest.fail("OAuth on fully resumed collection"))
+    monkeypatch.setattr(module,"_get",
+                        lambda *a,**kw: pytest.fail("Network on verified resume"))
+    assert module.main(args) == 0
+    resumed=json.loads(capsys.readouterr().out)
+    assert resumed["newly_requested_symbols"] == 0
+    assert all(item["status"] == "EXISTING_VERIFIED" for item in resumed["results"])
+    assert pauses == [2.0]
+
+
+def test_cli_partial_resume_skips_verified_source_and_requests_only_missing(
+    tmp_path, monkeypatch, capsys,
+):
+    import quantlab.intraday_kis_overtime_daily as module
+    root=tmp_path/"partial"
+    offline_capture(root)
+    monkeypatch.setenv("KIS_APP_KEY", "FAKE_KEY")
+    monkeypatch.setenv("KIS_APP_SECRET", "FAKE_SECRET")
+    monkeypatch.setattr(module,"_kis_token",lambda: "FAKE_TOKEN")
+    calls=[]
+    monkeypatch.setattr(module,"_get",lambda url,*,params,**kw:
+                        calls.append(params["FID_INPUT_ISCD"]) or
+                        json.dumps(response_overtime()).encode("utf-8"))
+    sleeps=[]
+    monkeypatch.setattr(module.time,"sleep",lambda amount:sleeps.append(amount))
+    assert module.main(["--out-dir",str(root),"--execute"]) == 0
+    output=json.loads(capsys.readouterr().out)
+    assert output["newly_requested_symbols"] == 1
+    assert [x["status"] for x in output["results"]] == [
+        "EXISTING_VERIFIED","CAPTURED"
+    ]
+    assert calls == ["000660"]
+    assert sleeps == []
