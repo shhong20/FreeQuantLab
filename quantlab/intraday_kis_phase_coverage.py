@@ -138,7 +138,7 @@ def analyze_case(*, root: Path, symbol: str, session: str) -> dict:
         },
         "daily_volume_j_plus_nx_equals_un": daily_additive,
         "un_clock_labels_equal_venue_union": clocks_un==union_clocks,
-        "minute_volume_un_minus_j_plus_nx": minute_delta,
+        "minute_volume_un_minus_venue_sum": minute_delta,
         "daily_gap_accounting_identity_holds": bridge,
         "accounting_identity_is_only_algebra_not_execution_attribution": True,
         "missing_krx_fixed_price_minutes_do_not_prove_trade_volume": True,
