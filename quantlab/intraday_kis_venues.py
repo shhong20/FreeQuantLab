@@ -193,6 +193,11 @@ def collect_minute(*, symbol: str, session: str, market: str,
             raise VenueProbeError("Venue page did not contain requested date")
         oldest = min(this_times)
         if oldest >= cursor:
+            if len(rows) < 120:
+                # A thinly traded market may legitimately have only the
+                # exact requested time label; keep it as an incomplete audit.
+                stop = "short_page_no_earlier_labels"
+                break
             raise VenueProbeError("Venue pages have no backward progress")
         if oldest <= "080000":
             stop = "reached_0800"
