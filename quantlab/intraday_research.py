@@ -28,8 +28,8 @@ class IntradayDataError(ValueError):
 
 
 MARKETS = {
-    "KRX_STOCK": ("Asia/Seoul", 9, 0, 78, 20.0),
-    "KRX_ETF": ("Asia/Seoul", 9, 0, 78, 0.0),
+    "KRX_STOCK": ("Asia/Seoul", 9, 0, 76, 20.0),
+    "KRX_ETF": ("Asia/Seoul", 9, 0, 76, 0.0),
     "US_EQUITY": ("America/New_York", 9, 30, 78, 0.0),
 }
 REQUIRED = ("timestamp", "open", "high", "low", "close", "volume")
@@ -75,7 +75,7 @@ def read_csv(path: str | Path, market: str) -> tuple[pd.DataFrame, str]:
 
 
 def validate(frame: pd.DataFrame, market: str) -> pd.DataFrame:
-    """Require 78 contiguous, valid five-minute regular-session bars per supplied day.
+    """Require 76 KRX continuous-trading or 78 US regular-session 5m bars/day.
 
     Holidays/missing *whole* days are not filled. Short US sessions and halted
     sessions require a separate reviewed calendar/data policy, so fail closed.
@@ -250,9 +250,13 @@ def evaluate(frame: pd.DataFrame, *, market: str, source_sha256: str,
     split_val = int(0.80 * len(sessions))
     validation = sessions[split_train:split_val]
     test = sessions[split_val:]
+    # KRX 15:20-15:30 closing call auction has no continuous prints.
+    # The last 15:15-15:20 close is NOT the official 15:30 overnight anchor.
+    # Until separate point-in-time auction closes are verified, no KRX gap PnL.
+    gap_enabled = corporate_actions_reviewed and market == "US_EQUITY"
     trades = build_trades(frame, fee_bps=fee_bps, slippage_bps=slippage_bps,
                           sell_tax_bps=tax,
-                          corporate_actions_reviewed=corporate_actions_reviewed)
+                          corporate_actions_reviewed=gap_enabled)
     candidates = {}
     selected = {}
     final = {}
@@ -288,13 +292,18 @@ def evaluate(frame: pd.DataFrame, *, market: str, source_sha256: str,
         "costs_bps": {"fee_each_side": fee_bps, "slippage_each_side": slippage_bps,
                       "sell_tax_only": tax},
         "corporate_actions_reviewed_by_operator": corporate_actions_reviewed,
-        "gap_strategy_blocked_without_review": not corporate_actions_reviewed,
+        "gap_strategy_blocked_without_review": not gap_enabled,
+        "krx_closing_auction_not_modeled": market.startswith("KRX"),
+        "last_continuous_bar_start_local": (
+            "15:15" if market.startswith("KRX") else "15:55"
+        ),
         "validation_candidates": candidates,
         "selected_by_validation_only": selected,
         "untouched_test_selected_only": final,
         "limitations": [
             "No brokerage fills, orderbook, borrow, market-impact or queue simulation",
             "No automatic exchange-calendar/corporate-action verification",
+            "KRX 15:20-15:30 closing call auction excluded; KRX gap strategy blocked",
             "Only complete regular full-length sessions; short sessions rejected",
             "Single-symbol long/cash, one trade per day; not portfolio performance",
             "Results are historical research; forward and live orders remain disabled",
