@@ -219,3 +219,39 @@ class _response:
         self.content=json.dumps(body).encode()
     def raise_for_status(self):
         return None
+
+
+def test_minute_before_reported_activation_is_not_attributed_to_breaker(
+    tmp_path, monkeypatch
+):
+    day = "2026-07-28"
+    root = tmp_path / "source"
+    inject(monkeypatch, root, {
+        day: mock_rows(session=day, missing={"101100", "101400"})
+    })
+    r = mod.analyze_day(source_root=root, symbol=TICKER, session=day)
+    slot = next(x for x in r["slots"] if x["timestamp"].endswith("10:10:00+09:00"))
+    assert slot["market_reported_cb_window_overlap"] is True
+    # 10:11 minute interval precedes 10:13:43 breaker activation.
+    assert slot["state"] == "INCOMPLETE_CB_AND_UNEXPLAINED_GAPS"
+    assert slot["ohlcv"] is None
+    assert r["day_disposition"] == "ENTIRE_DAY_STRATEGY_PNL_BLOCKED_MARKET_HALT_RISK"
+
+
+def test_readiness_never_removes_breaker_days_to_claim_walkforward(
+    tmp_path, monkeypatch
+):
+    root=tmp_path/"source"
+    days=("2026-07-28","2026-10-23")
+    inject(monkeypatch,root,{
+        days[0]:mock_rows(session=days[0],missing=clock_slice("101400","104300")),
+        days[1]:mock_rows(session=days[1]),
+    })
+    result=mod.build(source_root=root,out_dir=tmp_path/"result",
+                     symbols=(TICKER,),sessions=days)["summary"]
+    readiness=result["readiness_by_symbol"][TICKER]
+    assert readiness["market_halt_days_preserved"]==1
+    assert readiness["clean_complete_session_candidates"]==1
+    assert readiness["clean_session_shortfall_to_60"]==59
+    assert readiness["must_not_drop_halt_days_to_inflate_test_performance"] is True
+    assert readiness["legacy_strategy_evaluate_permitted"] is False
