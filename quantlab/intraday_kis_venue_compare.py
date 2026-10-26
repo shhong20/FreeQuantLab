@@ -83,6 +83,110 @@ def audit_markets(*, root: str | Path, symbol: str, session: str,
             ),
             "execution_venue_proven_by_price": False,
         }
+    # Venue time labels are observations, not exchange trade identifiers.
+    # Compare vendor-supplied minute volumes without inventing a corrected
+    # integrated feed. If a source omits a time label the arithmetic uses 0
+    # strictly for this diagnostic, not as evidence of zero executed shares.
+    full_clock_union = clocks["J"] | clocks["NX"]
+    minute_mismatches = []
+    minute_sum = {
+        m: sum(int(row["cntg_vol"]) for row in observations[m].values())
+        for m in ("J", "NX", "UN")
+    }
+    for tm in sorted(clocks["UN"] | full_clock_union):
+        j = int(observations["J"].get(tm, {}).get("cntg_vol", 0))
+        nx = int(observations["NX"].get(tm, {}).get("cntg_vol", 0))
+        un_row = observations["UN"].get(tm)
+        if un_row is None:
+            minute_mismatches.append({
+                "label": tm, "krx": j, "nxt": nx,
+                "integrated": None, "delta_un_minus_krx_nxt": None,
+                "reason": "MISSING_INTEGRATED_CLOCK",
+            })
+            continue
+        un = int(un_row["cntg_vol"])
+        delta = un - j - nx
+        if delta:
+            minute_mismatches.append({
+                "label": tm, "krx": j, "nxt": nx,
+                "integrated": un, "delta_un_minus_krx_nxt": delta,
+                "reason": "VENDOR_MINUTE_VOLUME_DISAGREEMENT",
+            })
+    minute_crosscheck = {
+        "status": "MISMATCH_HOLD" if minute_mismatches else "ARITHMETIC_MATCH_ONLY",
+        "all_vendor_clock_labels_covered": clocks["UN"] == full_clock_union,
+        "mismatch_count": len(minute_mismatches),
+        "mismatches": minute_mismatches,
+        "vendor_minute_volume_sums": minute_sum,
+        "minute_integrated_minus_venue_sum": minute_sum["UN"] - (
+            minute_sum["J"] + minute_sum["NX"]
+        ),
+        "zero_for_absent_venue_clock_is_arithmetic_only": True,
+        "execution_identity_verified": False,
+        "approved": False,
+    }
+    # For clocks where either market has an observation, an integrated
+    # minute's price envelope would normally include all venue highs/lows.
+    # This is a source-consistency diagnostic, not an official trade replay:
+    # the vendor's timestamp grouping semantics are still unverified.
+    envelope_mismatches = []
+    for tm in sorted(clocks["UN"] & full_clock_union):
+        venue_rows = [
+            observations[m][tm] for m in ("J", "NX") if tm in observations[m]
+        ]
+        integrated = observations["UN"][tm]
+        proposed_high = max(int(v["stck_hgpr"]) for v in venue_rows)
+        proposed_low = min(int(v["stck_lwpr"]) for v in venue_rows)
+        if (int(integrated["stck_hgpr"]) != proposed_high or
+                int(integrated["stck_lwpr"]) != proposed_low):
+            envelope_mismatches.append({
+                "label": tm,
+                "integrated_high": int(integrated["stck_hgpr"]),
+                "venue_candidate_high": proposed_high,
+                "integrated_low": int(integrated["stck_lwpr"]),
+                "venue_candidate_low": proposed_low,
+            })
+    price_envelope_crosscheck = {
+        "status": "MISMATCH_HOLD" if envelope_mismatches else "ARITHMETIC_MATCH_ONLY",
+        "mismatch_count": len(envelope_mismatches),
+        "mismatches": envelope_mismatches,
+        "source_clock_alignment_approved": False,
+        "usable_for_backtesting": False,
+    }
+    daily_totals = {}
+    daily_closes = {}
+    for market in ("J", "NX", "UN"):
+        d = audits[market]["daily_comparison"]
+        rows = d.get("date_only_public_fields", [])
+        if d.get("requested_date_matches") != 1 or not isinstance(rows, list) or len(rows) != 1:
+            continue
+        row = rows[0]
+        if not isinstance(row, dict):
+            continue
+        value = row.get("acml_vol")
+        close = row.get("stck_clpr")
+        if (isinstance(value, str) and re.fullmatch(r"[0-9]+", value)
+                and isinstance(close, str) and re.fullmatch(r"[0-9]+", close)):
+            daily_totals[market] = int(value)
+            daily_closes[market] = int(close)
+    daily_crosscheck = {
+        "status": (
+            "NOT_COMPARABLE" if len(daily_totals) != 3 else
+            "ARITHMETIC_MATCH_ONLY" if daily_totals["J"] + daily_totals["NX"] == daily_totals["UN"]
+            else "MISMATCH_HOLD"
+        ),
+        "official_unadjusted_daily_volume_by_market": daily_totals,
+        "official_unadjusted_daily_close_by_market": daily_closes,
+        "integrated_minus_venue_volume": (
+            daily_totals["UN"] - daily_totals["J"] - daily_totals["NX"]
+            if len(daily_totals) == 3 else None
+        ),
+        "minute_minus_official_daily_volume": {
+            m: minute_sum[m] - daily_totals[m] for m in daily_totals
+        },
+        "scope_parity_independently_verified": False,
+        "approved": False,
+    }
     observed_daily = {}
     for market in ("J", "NX", "UN"):
         daily = audits[market]["daily_comparison"]
@@ -106,6 +210,20 @@ def audit_markets(*, root: str | Path, symbol: str, session: str,
             for market in ("J", "NX", "UN")
         },
         "same_clock_label_overlaps_not_duplicate_trades": pairwise_clock_overlaps,
+        "minute_volume_arithmetic_diagnostic": minute_crosscheck,
+        "minute_price_envelope_diagnostic": price_envelope_crosscheck,
+        "official_daily_volume_arithmetic_diagnostic": daily_crosscheck,
+        "source_quality_holds": [
+            reason for reason, active in (
+                ("INTEGRATED_MINUTE_VOLUME_MISMATCH", bool(minute_mismatches)),
+                ("OFFICIAL_DAILY_VOLUME_MISMATCH",
+                 daily_crosscheck["status"] == "MISMATCH_HOLD"),
+                ("INTEGRATED_MINUTE_PRICE_ENVELOPE_MISMATCH",
+                 bool(envelope_mismatches)),
+                ("DAILY_SCOPE_NOT_PROVEN", True),
+                ("EXECUTION_VENUE_NOT_PROVEN", True),
+            ) if active
+        ],
         "integrated_last_price_label_comparison": close_match,
         "official_daily_unadjusted_raw_audits": observed_daily,
         "venue_attribution": "NOT_DETERMINABLE_FROM_MINUTE_OHLCV",
