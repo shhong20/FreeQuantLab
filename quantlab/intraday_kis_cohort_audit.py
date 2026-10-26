@@ -13,7 +13,7 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from .intraday_kis_cohort_capture import DEFAULT_SYMBOLS, DEFAULT_DATES, _comma_list
+from .intraday_kis_cohort_capture import DEFAULT_SYMBOLS, DEFAULT_DATES, _comma_list, plan
 from .intraday_kis_venue_compare import _read_one, audit_markets
 from .intraday_kis_venues import VenueProbeError
 
@@ -28,7 +28,7 @@ def _existing_audit(path: Path, *, root: Path, symbol: str, session: str) -> dic
                 report.get("usable_for_backtesting") is not False):
             raise VenueProbeError("Existing cohort case identity/status invalid")
         for market in ("J", "NX", "UN"):
-            _, rows = _read_one(root, symbol, session, market)
+            _read_one(root, symbol, session, market)
             # The source's full normalized observations are pinned to the
             # audit; no silent source substitution on resumptions.
             source = json.loads((root /
@@ -45,13 +45,14 @@ def _existing_audit(path: Path, *, root: Path, symbol: str, session: str) -> dic
 
 def cohort(*, source_root: str | Path, symbols: tuple[str, ...],
            sessions: tuple[str, ...], output: str | Path) -> dict:
-    if not (1 <= len(symbols) <= 3 and 1 <= len(sessions) <= 5):
-        raise VenueProbeError("Cohort bound is max 3 stocks x 5 dates")
-    if (len(set(symbols)) != len(symbols) or
-            len(set(sessions)) != len(sessions)):
-        raise VenueProbeError("Duplicate stock or trading session")
+    # Identical bounded source-plan validation, including path-safe symbols
+    # and historical weekdays. Caller must not be able to escape root.
+    plan(symbols=",".join(symbols), sessions=",".join(sessions),
+         markets="J,NX,UN")
     base = Path(source_root).expanduser().resolve()
     dest = Path(output).expanduser().resolve()
+    if (dest / "cohort_summary.json").exists():
+        raise VenueProbeError("Immutable cohort summary already exists")
     case_dir = dest / "cases"
     complete_cases = []
     incomplete_cases = []
