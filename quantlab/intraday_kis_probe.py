@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from .data import _kis_token
+from .data import DataError, _kis_token
 
 
 class KISMinuteError(ValueError):
@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except (KISMinuteError, ValueError, requests.RequestException, OSError) as exc:
+    except (KISMinuteError, DataError, ValueError, requests.RequestException, OSError) as exc:
         p.exit(2, f"FAIL CLOSED (minute provenance only): {type(exc).__name__}\n")
 
 
