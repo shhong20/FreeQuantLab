@@ -77,13 +77,14 @@ def _minute(row: dict, expected_day: str) -> dict:
     return values
 
 
-def _window_overlaps(session: str, start_label: str, event: dict | None) -> bool:
+def _window_overlaps(session: str, start_label: str, event: dict | None,
+                     *, minutes: int = MINUTES_PER_BUCKET) -> bool:
     if not event:
         return False
     start = datetime.fromisoformat(
         f"{session}T{start_label[:2]}:{start_label[2:4]}:00+09:00"
     )
-    stop = start + timedelta(minutes=MINUTES_PER_BUCKET)
+    stop = start + timedelta(minutes=minutes)
     return (
         start < datetime.fromisoformat(
             event["conservative_continuous_order_blackout_until_kst"])
@@ -113,9 +114,8 @@ def analyze_day(*, source_root: Path, symbol: str, session: str) -> dict:
             # A reported CB is a possible explanation only for missing
             # clocks whose *minute interval* overlaps the reported 30m window.
             related = [
-                x for x in missing if _window_overlaps(session, x, ev)
-                # _window_overlaps uses a five-minute interval; conservative
-                # overlap classifications are advisory and never certify a CB.
+                x for x in missing
+                if _window_overlaps(session, x, ev, minutes=1)
             ]
             if related and len(related) == len(missing):
                 state = "INCOMPLETE_CB_CORRELATED_UNVERIFIED"
@@ -223,8 +223,25 @@ def build(*, source_root: str | Path, out_dir: str | Path,
                 if key != "slots"
             })
         by_symbol[symbol] = daily
+    readiness_by_symbol = {}
+    for symbol in symbols:
+        vals = by_symbol[symbol]
+        clean_days = sum(
+            x["day_disposition"] == "PROVISIONAL_COMPLETE_DAY_VENDOR_SEMANTICS_HOLD"
+            for x in vals
+        )
+        readiness_by_symbol[symbol] = {
+            "market_halt_days_preserved": sum(x["reported_cb"] is not None for x in vals),
+            "clean_complete_session_candidates": clean_days,
+            "legacy_engine_minimum_complete_sessions": 60,
+            "clean_session_shortfall_to_60": max(0, 60 - clean_days),
+            "clean_session_count_is_not_a_valid_walkforward_dataset": True,
+            "must_not_drop_halt_days_to_inflate_test_performance": True,
+            "legacy_strategy_evaluate_permitted": False,
+        }
     summary = {
         "status": "HALT_AWARE_5M_CANDIDATES_RESEARCH_ONLY_NO_PNL",
+        "readiness_by_symbol": readiness_by_symbol,
         "source": "SHA_VERIFIED_KIS_KRX_J_ORIGINAL_MINUTES",
         "symbols": list(symbols),
         "sessions": list(sessions),
