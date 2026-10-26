@@ -267,7 +267,10 @@ def collect_daily(*, symbol: str, session: str, market: str,
         "acml_vol": r.get("acml_vol"),
     } for r in match]
     return raw, {
-        "status": "KIS_VENUE_DAILY_RAW_UNVERIFIED",
+        "status": (
+            "KIS_VENUE_DAILY_RAW_UNVERIFIED"
+            if selected else "KIS_VENUE_DAILY_NO_MATCHING_SESSION"
+        ),
         "source": "KIS_FHKST03010100",
         "market": market, "venue": MARKETS[market],
         "session": session, "symbol": symbol, "unadjusted_request": True,
@@ -316,9 +319,10 @@ def capture(*, symbol: str, session: str, market: str,
             "usable_for_backtesting": False,
         }
     report["daily_comparison"] = daily_audit
-    report["source_minute_bar_sha256"] = sha256(
-        (json.dumps(bars, ensure_ascii=False, sort_keys=True) + "\n").encode()
-    ).hexdigest()
+    observations_blob = (
+        json.dumps(bars, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
+    report["source_minute_bar_sha256"] = sha256(observations_blob).hexdigest()
     root.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix=".venue-probe-", dir=root))
     try:
@@ -327,9 +331,8 @@ def capture(*, symbol: str, session: str, market: str,
             (stage / "raw" / f"minute_{i:03d}.json").write_bytes(contents)
         if daily_raw is not None:
             (stage / "raw" / "daily.json").write_bytes(daily_raw)
-        (stage / "minute_observations_UNVERIFIED.json").write_text(
-            json.dumps(bars, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
+        (stage / "minute_observations_UNVERIFIED.json").write_bytes(
+            observations_blob
         )
         (stage / "audit.json").write_text(
             json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
