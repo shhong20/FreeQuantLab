@@ -95,8 +95,8 @@ def test_real_capture_run_mocks_http_and_keeps_progress_out_of_raw_root(
     invocations=[]
     def local_run(**kw):
         invocations.append(kw["execute"])
-        return original(**kw,getter=get,sleep=lambda _:None,
-                        clock=lambda:0.0,between_tasks_seconds=0.0)
+        return original(**(kw | {"between_tasks_seconds": 0.0}),
+                        getter=get,sleep=lambda _:None,clock=lambda:0.0)
     monkeypatch.setattr(backfill,"capture_run",local_run)
     # One trading day x two stocks, J only. The fake response exercises
     # real KIS page capture and hash verification, but no credentials/net.
