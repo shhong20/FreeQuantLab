@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
@@ -235,6 +236,72 @@ def run_batch(*, plan_dir: str | Path, batch_index: int, execute: bool = False,
     return result
 
 
+def run_all(*, plan_dir: str | Path, execute: bool = False,
+            key: str = "", secret: str = "", token: str = "",
+            pause: callable = time.sleep) -> dict:
+    """All batches in order; explicit --execute only; stop at FIRST failure.
+
+    Runs each batch under the existing five-day max. All KIS source folders
+    are immutable, and each batch progress report is separate. A restart can
+    resume without replaying previously verified HTTP requests.
+    """
+    manifest=load(plan_dir)
+    previews=[
+        run_batch(plan_dir=plan_dir,batch_index=i,execute=False)
+        for i in range(len(manifest["batches"]))
+    ]
+    original_missing=sum(x["pending"] for x in previews)
+    summary={
+        "status":"ALL_BATCHES_PREVIEW_NO_NETWORK",
+        "batch_count":len(previews),
+        "remaining_before":original_missing,
+        "source_market":"J",
+        "usable_for_backtesting":False,
+        "orders_enabled":False,
+        "trading_calendar_provider_verified":False,
+    }
+    if not execute:
+        return summary
+    if original_missing and not (key and secret and token):
+        raise VenueProbeError("Missing locally provided read-only KIS credentials")
+    reports=[]
+    previous_http=False
+    for i in range(len(previews)):
+        if previous_http:
+            pause(2.0)  # delay across separate batch-local rate-limiters
+        result=run_batch(plan_dir=plan_dir,batch_index=i,execute=True,
+                         key=key,secret=secret,token=token)
+        reports.append({
+            "batch_index":i, "status":result["status"],
+            "pending_before":result["pending"],
+            "verified_existing_or_new":result.get(
+                "verified_existing_or_new",result["verified_existing"]),
+            "http_get_requests":result.get("http_get_requests",0),
+        })
+        print(json.dumps({"batch_progress":reports[-1]},sort_keys=True),flush=True)
+        previous_http=result.get("http_get_requests",0)>0
+        if result["status"] in ("STOPPED_ON_FAILURE_LIMIT","COMPLETED_WITH_FAILURES"):
+            break
+    # Do not mistake a successful request attempt for complete source
+    # coverage. Revalidate every stored hash after the entire attempt.
+    again=[
+        run_batch(plan_dir=plan_dir,batch_index=i,execute=False)
+        for i in range(len(manifest["batches"]))
+    ]
+    remaining=sum(x["pending"] for x in again)
+    summary.update({
+        "status":(
+            "ALL_BATCHES_VERIFIED_COMPLETED" if not remaining else
+            "ALL_BATCHES_PARTIALLY_COLLECTED_HOLD"
+        ),
+        "remaining_after":remaining,
+        "snapshots_verified":len(manifest["sessions"])*len(manifest["symbols"])-remaining,
+        "batch_reports":reports,
+        "stop_on_first_provider_error":True,
+    })
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser=argparse.ArgumentParser(
         description="Bounded XKRX 60-session historic J-only capture plan; dry run by default"
@@ -242,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--init",action="store_true")
     mode.add_argument("--batch",type=int)
+    mode.add_argument("--all-batches",action="store_true")
     parser.add_argument("--plan-dir",required=True)
     parser.add_argument("--source-root")
     parser.add_argument("--end-session")
@@ -268,6 +336,18 @@ def main(argv: list[str] | None = None) -> int:
                 "pending":manifest["pending_stock_day_snapshots"],
                 "trading_allowed":False,
             }
+        elif args.all_batches:
+            preview=run_all(plan_dir=args.plan_dir)
+            if not args.execute or not preview["remaining_before"]:
+                report=run_all(plan_dir=args.plan_dir,execute=args.execute)
+            else:
+                key=os.getenv("KIS_APP_KEY","")
+                secret=os.getenv("KIS_APP_SECRET","")
+                if not key or not secret:
+                    raise VenueProbeError("Missing local KIS credentials")
+                token=_kis_token()
+                report=run_all(plan_dir=args.plan_dir,execute=True,
+                               key=key,secret=secret,token=token)
         else:
             if args.execute:
                 # Never use KIS OAuth when preview-only or all saved sources
@@ -288,7 +368,8 @@ def main(argv: list[str] | None = None) -> int:
                 report=run_batch(plan_dir=args.plan_dir,batch_index=args.batch)
         print(json.dumps(report,sort_keys=True,ensure_ascii=False,indent=2))
         return 0 if report["status"] not in (
-            "STOPPED_ON_FAILURE_LIMIT","COMPLETED_WITH_FAILURES") else 2
+            "STOPPED_ON_FAILURE_LIMIT","COMPLETED_WITH_FAILURES",
+            "ALL_BATCHES_PARTIALLY_COLLECTED_HOLD") else 2
     except Exception as exc:
         # No vendor headers, tokens, raw provider msg1 or env values.
         err=type(exc).__name__
