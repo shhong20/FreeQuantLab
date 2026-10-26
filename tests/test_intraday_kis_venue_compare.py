@@ -89,6 +89,8 @@ def test_venue_comparison_does_not_fabricate_market_trades(tmp_path):
         "J": -100, "NX": 0, "UN": -300
     }
     assert "INTEGRATED_MINUTE_VOLUME_MISMATCH" in report["source_quality_holds"]
+    assert report["minute_price_envelope_diagnostic"]["status"] == "ARITHMETIC_MATCH_ONLY"
+    assert report["minute_price_envelope_diagnostic"]["mismatch_count"] == 0
     assert day_check["approved"] is False
     assert Path(result["output"]).is_dir()
     with pytest.raises(VenueProbeError, match="already exists"):
@@ -130,3 +132,32 @@ def test_equal_minute_sums_do_not_prove_trade_identity(tmp_path):
     assert daily["status"] == "ARITHMETIC_MATCH_ONLY"
     assert report["venue_attribution"] == "NOT_DETERMINABLE_FROM_MINUTE_OHLCV"
     assert report["usable_for_backtesting"] is False
+
+
+def test_integrated_minute_price_envelope_violation_is_independent_hard_hold(tmp_path):
+    source = populate(tmp_path, consistent_integrated=True)
+    snapshot = source / f"KIS_UN_EXT_{TICKER}_{SESSION}"
+    rowfile = snapshot / "minute_observations_UNVERIFIED.json"
+    observations = json.loads(rowfile.read_text())
+    for row in observations:
+        if row["stck_cntg_hour"] == "090000":
+            row["stck_hgpr"] = "95"
+            row["stck_oprc"] = "95"
+            row["stck_lwpr"] = "95"
+            row["stck_prpr"] = "95"
+    data = (json.dumps(observations, ensure_ascii=False, sort_keys=True, indent=2)+"\n").encode()
+    rowfile.write_bytes(data)
+    # Only for testing independently inconsistent but internally hashed vendor data.
+    auditfile = snapshot / "audit.json"
+    audit = json.loads(auditfile.read_text())
+    audit["source_minute_bar_sha256"] = sha256(data).hexdigest()
+    auditfile.write_text(json.dumps(audit))
+    out = audit_markets(root=source, symbol=TICKER, session=SESSION,
+                        out_dir=tmp_path/"comparison")["audit"]
+    prices = out["minute_price_envelope_diagnostic"]
+    assert prices["status"] == "MISMATCH_HOLD"
+    assert prices["mismatch_count"] == 1
+    assert prices["mismatches"][0]["label"] == "090000"
+    assert "INTEGRATED_MINUTE_PRICE_ENVELOPE_MISMATCH" in out["source_quality_holds"]
+    assert out["minute_volume_arithmetic_diagnostic"]["mismatch_count"] == 0
+    assert out["usable_for_backtesting"] is False
