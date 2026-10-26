@@ -15,6 +15,7 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
 from statistics import median
 from zoneinfo import ZoneInfo
 
@@ -207,8 +208,9 @@ def build_trades(frame: pd.DataFrame, *, fee_bps: float = 3.0,
 
 
 def _metrics(days: list[str], trades: list[dict]) -> dict:
-    lookup = {t["session"]: t for t in trades if t["session"] in set(days)}
-    if len(lookup) != len([t for t in trades if t["session"] in set(days)]):
+    included = [t for t in trades if t["session"] in set(days)]
+    lookup = {t["session"]: t for t in included}
+    if len(lookup) != len(included):
         raise IntradayDataError("Overlapping trades on a session")
     returns = np.array([lookup[d]["net_return"] if d in lookup else 0.0
                         for d in days], dtype=float)
@@ -218,7 +220,7 @@ def _metrics(days: list[str], trades: list[dict]) -> dict:
     peak = np.maximum.accumulate(np.r_[1.0, equity])[1:]
     std = float(returns.std(ddof=1)) if len(returns) > 1 else 0.0
     sharpe = float(returns.mean() / std * np.sqrt(PERIODS_PER_YEAR)) if std > 0 else None
-    active = returns[returns != 0]
+    active = np.array([t["net_return"] for t in included], dtype=float)
     return {
         "sessions": len(days),
         "trades": len(lookup),
