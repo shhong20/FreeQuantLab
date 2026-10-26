@@ -177,3 +177,16 @@ def test_clock_phase_is_never_execution_venue_proof():
     assert phase("NX", "080000") == "nxt_pre_market"
     assert phase("NX", "090000") == "nxt_main_market_candidate"
     assert phase("UN", "153000") == "integrated_0900_1530_unknown_venue"
+
+
+def test_single_2000_market_price_is_preserved_without_fake_history():
+    getter,_ = responder([bar("200000")])
+    pages, rows, audit = collect_minute(
+        symbol=TICKER, session=SESSION, market="NX",
+        key="K", secret="S", token="T", getter=getter, now=NOW,
+    )
+    assert len(rows) == 1
+    assert audit["unique_minute_labels"] == 1
+    assert audit["pagination_stop"] == "short_page_no_earlier_labels"
+    assert audit["automatic_5min_conversion"] is False
+    assert audit["usable_for_backtesting"] is False
