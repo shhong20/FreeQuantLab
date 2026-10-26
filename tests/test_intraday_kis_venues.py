@@ -82,6 +82,12 @@ def test_market_snapshots_separately_persisted_with_unverified_rules(
     assert audit["daily_comparison"]["requested_date_matches"] == 1
     assert audit["daily_comparison"]["usable_for_backtesting"] is False
     assert (path/"raw"/"minute_000.json").is_file()
+    assert sha256((path/"minute_observations_UNVERIFIED.json").read_bytes()).hexdigest() == (
+        audit["source_minute_bar_sha256"]
+    )
+    assert sha256((path/"raw"/"minute_000.json").read_bytes()).hexdigest() == (
+        audit["page_sha256"][0]
+    )
     assert (path/"raw"/"daily.json").is_file()
     assert sha256((path/"raw"/"daily.json").read_bytes()).hexdigest() == (
         audit["daily_comparison"]["raw_sha256"])
