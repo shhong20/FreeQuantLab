@@ -85,7 +85,7 @@ def test_plan_small_fixed_sessions_and_bounds():
         plan(symbols="005930,005930",sessions="2026-10-23",markets="J",
              today=date(2026,10,26))
     with pytest.raises(VenueProbeError,match="30"):
-        plan(symbols="005930,000660,035420",sessions=DEFAULT_DATES,
+        plan(symbols="005930,000660,035420",sessions="2026-10-19,2026-10-20,2026-10-21,2026-10-22,2026-10-23",
              markets="J,NX,UN",today=date(2026,10,26))
 
 
