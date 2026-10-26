@@ -127,10 +127,12 @@ def _candles(data: list[dict], session: str) -> tuple[list[dict], dict]:
         "continuous_volume": regular_volume,
         "closing_auction_time_label": "153000",
         "closing_auction_price": closing_price,
+        "krx_1530_regular_close": closing_price,
         "closing_auction_high": auction["high"],
         "closing_auction_low": auction["low"],
         "closing_auction_volume": auction["volume"],
         "candidate_total_volume": regular_volume + auction["volume"],
+        "krx_1530_regular_volume_candidate": regular_volume + auction["volume"],
         "candles_5m": len(bars),
         "minutely_bars": len(MINUTES),
         "input_labels_assumed_start": True,
@@ -176,10 +178,27 @@ def _reconcile_daily(path: str | Path | None, *, symbol: str, session: str,
             "delta": observed[k] - reference[k]}
         for k in names if float(observed[k]) != float(reference[k])
     }
+    provider = source[0] if source else "unknown"
+    # "market=KRX" in the legacy long_bars table is a storage category,
+    # NOT proof that the provider used the KRX 15:30 closing auction.
+    # Unofficial end-of-day snapshots may reflect NXT and/or extended
+    # hours. Even identical prices/volumes cannot verify venue parity.
+    reference_scope = (
+        "UNVERIFIED_KRX_NXT_EXTENDED_HOURS_MIX_POSSIBLE"
+        if provider == "naver_unofficial_siseJson"
+        else "UNVERIFIED_PROVIDER_MARKET_AND_TIME_SCOPE"
+    )
     return {
         "status": "SOURCE_DISAGREEMENT_HOLD" if differences else "MATCHED_UNVERIFIED",
         "approved": False,
-        "reference_provider": source[0] if source else "unknown",
+        "comparison_is_like_for_like": False,
+        "candidate_venue": "KRX",
+        "candidate_market_phase": "REGULAR_09_00_TO_15_30_WITH_CLOSING_AUCTION",
+        "candidate_price_reference": "KRX_15_30_CLOSING_AUCTION",
+        "reference_venue_time_scope": reference_scope,
+        "difference_attribution": "NOT_DETERMINABLE_FROM_TWO_TOTALS_ALONE",
+        "volume_delta_cannot_be_called_nxt_volume": True,
+        "reference_provider": provider,
         "source_daily_sha256": row[5],
         "reference_daily": reference,
         "minute_candidate_daily": observed,
@@ -213,6 +232,10 @@ def inspect_snapshot(*, snapshot: str | Path, out_dir: str | Path,
         "source_page_sha256": source_audit["raw_sha256"],
         "candidate_csv_sha256": sha256(csv_blob).hexdigest(),
         "source_verified_date_only": True,
+        "requested_vendor_venue_code": "J",
+        "requested_vendor_venue": "KRX",
+        "scope_is_kis_krx_regular_closing_auction_only": True,
+        "nxt_or_extended_hours_rows_in_snapshot": False,
         "minute_label_semantics": "ASSUMED_BAR_START_NEEDS_VENDOR_VERIFICATION",
         "cntg_vol_semantics": "ASSUMED_PER_MINUTE_EXECUTED_VOLUME_NEEDS_VERIFICATION",
         "continuous_window": "09:00-15:20 KST (exclusive end)",

@@ -88,6 +88,20 @@ def test_exact_76_bars_and_auction_isolation_and_differences(tmp_path):
     assert audit["daily"]["closing_auction_price"] == 105
     assert audit["daily"]["continuous_last_price"] == 101
     assert audit["reference_reconciliation"]["status"] == "SOURCE_DISAGREEMENT_HOLD"
+    assert audit["requested_vendor_venue_code"] == "J"
+    assert audit["requested_vendor_venue"] == "KRX"
+    assert audit["scope_is_kis_krx_regular_closing_auction_only"] is True
+    assert audit["nxt_or_extended_hours_rows_in_snapshot"] is False
+    assert audit["daily"]["krx_1530_regular_close"] == 105
+    assert audit["daily"]["krx_1530_regular_volume_candidate"] == 4577
+    reconciliation = audit["reference_reconciliation"]
+    assert reconciliation["comparison_is_like_for_like"] is False
+    assert reconciliation["candidate_venue"] == "KRX"
+    assert reconciliation["candidate_price_reference"] == "KRX_15_30_CLOSING_AUCTION"
+    assert reconciliation["reference_venue_time_scope"] == (
+        "UNVERIFIED_KRX_NXT_EXTENDED_HOURS_MIX_POSSIBLE")
+    assert reconciliation["difference_attribution"] == "NOT_DETERMINABLE_FROM_TWO_TOTALS_ALONE"
+    assert reconciliation["volume_delta_cannot_be_called_nxt_volume"] is True
     assert audit["reference_reconciliation"]["reference_provider"] == "naver_unofficial_siseJson"
     assert audit["reference_reconciliation"]["differences"]["close"]["delta"] == 1
     assert audit["reference_reconciliation"]["differences"]["volume"]["delta"] == 133
@@ -133,3 +147,20 @@ def test_no_time_offset_or_future_minute_and_no_fake_zero_fill(tmp_path):
     auditfile.write_text(json.dumps(audit))
     with pytest.raises(KISReconciliationError, match="Unexpected/missing"):
         inspect_snapshot(snapshot=folder, out_dir=tmp_path/"derived")
+
+
+def test_equal_legacy_daily_values_do_not_prove_venue_parity(tmp_path):
+    snapshot = make_snapshot(tmp_path)
+    db = daily_db(tmp_path, close=105.0, volume=4577.0)
+    # The synthetic 15:30 auction (105) is also the full-day high.
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE long_bars SET high=105 WHERE ticker=?", (SYMBOL,))
+    result = inspect_snapshot(
+        snapshot=snapshot, daily_db=db, out_dir=tmp_path/"derived",
+    )
+    rec = result["audit"]["reference_reconciliation"]
+    assert rec["differences"] == {}
+    assert rec["status"] == "MATCHED_UNVERIFIED"
+    assert rec["comparison_is_like_for_like"] is False
+    assert rec["approved"] is False
+    assert result["audit"]["usable_for_backtesting"] is False
