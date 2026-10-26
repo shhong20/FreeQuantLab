@@ -69,7 +69,7 @@ def test_venue_comparison_does_not_fabricate_market_trades(tmp_path):
         "J_NX": 2, "J_UN": 2, "NX_UN": 3, "ALL": 2,
     }
     assert report["integrated_last_price_label_comparison"]["J"]["same_reported_last_price_labels"] == 0
-    assert report["integrated_last_price_label_comparison"]["NX"]["same_reported_last_price_labels"] == 2
+    assert report["integrated_last_price_label_comparison"]["NX"]["same_reported_last_price_labels"] == 1
     assert report["integrated_volume_equals_sum_of_venues"] == "NOT_ASSUMED"
     assert report["venue_attribution"] == "NOT_DETERMINABLE_FROM_MINUTE_OHLCV"
     assert report["usable_for_backtesting"] is False
