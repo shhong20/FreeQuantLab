@@ -38,10 +38,11 @@ def _vendor_body(path: Path) -> dict:
         parsed = json.loads(path.read_bytes())
     except (OSError, ValueError, UnicodeError) as exc:
         raise VenueProbeError("Cannot parse hash-checked KIS raw source") from exc
-    if (not isinstance(parsed, dict)
-            or not isinstance(parsed.get("output2"), list)
-            or not isinstance(parsed.get("output1"), dict)):
-        raise VenueProbeError("KIS raw source lacks output1/output2 objects")
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("output2"), list):
+        raise VenueProbeError("KIS raw source lacks historical output2 list")
+    if parsed.get("output1") is not None and not isinstance(parsed["output1"], dict):
+        raise VenueProbeError("KIS output1 quote header has invalid type")
+    parsed.setdefault("output1", {})
     return parsed
 
 
