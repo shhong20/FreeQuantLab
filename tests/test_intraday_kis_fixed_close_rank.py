@@ -172,10 +172,15 @@ def test_live_cli_with_mocked_oauth_get_and_resume_no_second_oauth(
     monkeypatch.setattr(app,"_kis_token",
                         lambda:token_calls.append(1) or "SAFE_TOKEN")
     requests=[]
-    def get(url,**kw):
+    def get(url, **kw):
+        assert url == app.URL
+        assert kw["tr_id"] == app.TR_ID
+        assert kw["key"] == "LOCAL_TEST_KEY"
+        assert kw["secret"] == "LOCAL_TEST_SECRET"
+        assert kw["token"] == "SAFE_TOKEN"
         requests.append(kw["params"]["FID_RANK_SORT_CLS_CODE"])
-        return make_getter()(url,**kw)
-    monkeypatch.setattr(app,"_get",lambda url,**kw: get(url,**kw).content)
+        return json.dumps(vendor_data()).encode()
+    monkeypatch.setattr(app, "_get", get)
     cmd=["--phase","PRE","--expected-session",DAY,
          "--out-dir",str(tmp_path),"--execute"]
     assert app.main(cmd)==0
