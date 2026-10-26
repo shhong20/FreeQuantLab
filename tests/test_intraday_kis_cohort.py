@@ -205,3 +205,17 @@ def test_incomplete_market_never_counted_as_a_zero_error(tmp_path):
     assert s["checked_integrated_minute_labels"]==0
     assert s["minute_volume_mismatch_rate"] is None
     assert s["excluded_missing_cases"][0]["missing_markets"]==["UN"]
+
+
+@pytest.mark.parametrize("symbols,sessions", [
+    (("../unsafe",), ("2026-10-23",)),
+    (("005930",), ("2026-10-24",)),
+    (("005930",), ("2026-10-23","2026-10-23")),
+])
+def test_offline_cohort_rejects_unsafe_identifiers_and_duplicate_dates(
+    tmp_path, symbols, sessions,
+):
+    with pytest.raises(VenueProbeError):
+        cohort(source_root=tmp_path, symbols=symbols,
+               sessions=sessions, output=tmp_path/"cohort")
+    assert not (tmp_path/"cohort").exists()
