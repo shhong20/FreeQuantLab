@@ -127,7 +127,7 @@ def test_no_baseline_is_not_zero_revision_rate(tmp_path):
     make_three(new)
     s=survey(baseline_root=base,newer_root=new,symbols=(SYMBOL,),
              sessions=("2026-10-23",),out_dir=tmp_path/"report")["summary"]
-    assert s["status"]=="NO_COMPARABLE_REVISIONS"
+    assert s["status"]=="NO_COMPARABLE_CAPTURE_PAIRS"
     assert s["complete_pairs"]==0
     assert s["revision_affected_pair_rate"] is None
     assert s["missing_capture_pairs"]==1
