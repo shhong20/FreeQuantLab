@@ -32,6 +32,107 @@ def _daily_raw_audit(audit: dict) -> dict:
     }
 
 
+def _vendor_body(path: Path) -> dict:
+    """Hash-checked by _read_one. Never expose provider body or credentials."""
+    try:
+        parsed = json.loads(path.read_bytes())
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise VenueProbeError("Cannot parse hash-checked KIS raw source") from exc
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("output2"), list):
+        raise VenueProbeError("KIS raw source lacks historical output2 list")
+    if parsed.get("output1") is not None and not isinstance(parsed["output1"], dict):
+        raise VenueProbeError("KIS output1 quote header has invalid type")
+    parsed.setdefault("output1", {})
+    return parsed
+
+
+def _raw_historical_comparison(*, market: str, a: tuple[dict, dict],
+                               b: tuple[dict, dict], base: Path,
+                               replay: Path) -> dict:
+    """Separate mutable vendor quote header from stored historical bars."""
+    report_a, _ = a
+    report_b, _ = b
+    folder_a = base / f"KIS_{market}_EXT_{report_a['symbol']}_{report_a['session']}" / "raw"
+    folder_b = replay / f"KIS_{market}_EXT_{report_b['symbol']}_{report_b['session']}" / "raw"
+    pages_a, pages_b = report_a["pages"], report_b["pages"]
+    minute_pages = []
+    for index in range(max(pages_a, pages_b)):
+        if index >= pages_a or index >= pages_b:
+            minute_pages.append({
+                "page": index, "presence_match": False,
+                "historical_output2_identical": False,
+                "live_quote_header_output1_identical": False,
+            })
+            continue
+        x = _vendor_body(folder_a / f"minute_{index:03d}.json")
+        y = _vendor_body(folder_b / f"minute_{index:03d}.json")
+        # This is a *field-name* diff, not a provider value or msg1 dump.
+        changed_header_fields = sorted(
+            k for k in set(x["output1"]) | set(y["output1"])
+            if x["output1"].get(k) != y["output1"].get(k)
+            if isinstance(k, str) and re.fullmatch(r"[a-z0-9_]{1,40}", k)
+        )
+        minute_pages.append({
+            "page": index,
+            "presence_match": True,
+            "historical_output2_identical": x["output2"] == y["output2"],
+            "historical_output2_row_counts": [len(x["output2"]), len(y["output2"])],
+            "live_quote_header_output1_identical": x["output1"] == y["output1"],
+            "changed_header_field_names_only": changed_header_fields,
+            "non_historical_aux_fields_identical": {
+                k: x.get(k) == y.get(k) for k in ("rt_cd", "msg_cd", "msg1")
+            },
+        })
+    old_daily = _vendor_body(folder_a / "daily.json") if (
+        folder_a / "daily.json").is_file() else None
+    new_daily = _vendor_body(folder_b / "daily.json") if (
+        folder_b / "daily.json").is_file() else None
+    day_output2_same = (
+        old_daily is not None and new_daily is not None and
+        old_daily["output2"] == new_daily["output2"]
+    )
+    day_output1_same = (
+        old_daily is not None and new_daily is not None and
+        old_daily["output1"] == new_daily["output1"]
+    )
+    day_header_changes = (
+        sorted(k for k in set(old_daily["output1"]) | set(new_daily["output1"])
+               if old_daily["output1"].get(k) != new_daily["output1"].get(k)
+               if isinstance(k, str) and re.fullmatch(r"[a-z0-9_]{1,40}", k))
+        if old_daily is not None and new_daily is not None else []
+    )
+    pages_historical_identical = all(
+        row["presence_match"] and row["historical_output2_identical"]
+        for row in minute_pages
+    )
+    header_changed = (
+        any(not p["live_quote_header_output1_identical"] for p in minute_pages)
+        or not day_output1_same
+    )
+    return {
+        "classification": (
+            "HISTORICAL_BARS_SAME_VENDOR_OUTPUT1_CHANGED"
+            if pages_historical_identical and day_output2_same and header_changed
+            else "HISTORICAL_PAYLOAD_AND_HEADER_SAME"
+            if pages_historical_identical and day_output2_same and not header_changed
+            else "HISTORICAL_PAGE_OR_DAILY_PAYLOAD_DIFFERENCE_HOLD"
+        ),
+        "minute_page_historical_output2_all_identical": pages_historical_identical,
+        "historical_daily_output2_identical": bool(day_output2_same),
+        "daily_live_quote_header_output1_identical": bool(day_output1_same),
+        "daily_changed_header_field_names_only": day_header_changes,
+        "minute_page_comparisons": minute_pages,
+        "all_vendor_raw_bytes_identical": (
+            report_a["page_sha256"] == report_b["page_sha256"]
+            and report_a["daily_comparison"].get("raw_sha256") ==
+            report_b["daily_comparison"].get("raw_sha256")
+        ),
+        "raw_body_values_disclosed": False,
+        "output1_assumed_live_context_only_not_history": True,
+        "historical_bars_certified_correct": False,
+    }
+
+
 def _snapshot_comparison(*, market: str, baseline: tuple[dict, dict],
                          replay: tuple[dict, dict]) -> dict:
     a, original = baseline
@@ -149,17 +250,29 @@ def compare_replay(*, baseline_root: str | Path, replay_root: str | Path,
         comparisons[market] = _snapshot_comparison(
             market=market, baseline=baseline, replay=replay
         )
+        comparisons[market]["raw_historical_payload_comparison"] = (
+            _raw_historical_comparison(
+                market=market, a=baseline, b=replay,
+                base=base, replay=newer,
+            )
+        )
         if market == "UN":
             comparisons["UN"]["baseline_venue_crosscheck"] = (
                 _un_anomaly_against_baseline_venues(
                     base, symbol, session, baseline[1], replay[1]
                 )
             )
-    status = (
-        "REPLAY_OBSERVATIONS_REPRODUCED"
-        if all(comparisons[m]["normal_observation_content_identical"] for m in markets)
-        else "REPLAY_OBSERVATIONS_CHANGED_HOLD"
-    )
+    # Normalized changes are most actionable; even if normalized bars match,
+    # the raw historical arrays can differ in fields outside the allowlist.
+    if not all(comparisons[m]["normal_observation_content_identical"] for m in markets):
+        status = "REPLAY_OBSERVATIONS_CHANGED_HOLD"
+    elif any(
+        comparisons[m]["raw_historical_payload_comparison"]["classification"] ==
+        "HISTORICAL_PAGE_OR_DAILY_PAYLOAD_DIFFERENCE_HOLD" for m in markets
+    ):
+        status = "REPLAY_HISTORICAL_PAYLOAD_CHANGED_HOLD"
+    else:
+        status = "REPLAY_OBSERVATIONS_REPRODUCED"
     result = {
         "status": status,
         "session": session,
@@ -167,6 +280,7 @@ def compare_replay(*, baseline_root: str | Path, replay_root: str | Path,
         "markets": comparisons,
         "raw_market_sources_preserved": True,
         "replayed_market_data_proven_correct": False,
+        "api_raw_bytes_can_change_when_output2_is_unchanged": True,
         "market_clock_semantics_verified": False,
         "usable_for_backtesting": False,
         "usable_for_paper_or_live": False,
