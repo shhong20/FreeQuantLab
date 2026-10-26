@@ -125,6 +125,34 @@ def audit_markets(*, root: str | Path, symbol: str, session: str,
         "execution_identity_verified": False,
         "approved": False,
     }
+    # For clocks where either market has an observation, an integrated
+    # minute's price envelope would normally include all venue highs/lows.
+    # This is a source-consistency diagnostic, not an official trade replay:
+    # the vendor's timestamp grouping semantics are still unverified.
+    envelope_mismatches = []
+    for tm in sorted(clocks["UN"] & full_clock_union):
+        venue_rows = [
+            observations[m][tm] for m in ("J", "NX") if tm in observations[m]
+        ]
+        integrated = observations["UN"][tm]
+        proposed_high = max(int(v["stck_hgpr"]) for v in venue_rows)
+        proposed_low = min(int(v["stck_lwpr"]) for v in venue_rows)
+        if (int(integrated["stck_hgpr"]) != proposed_high or
+                int(integrated["stck_lwpr"]) != proposed_low):
+            envelope_mismatches.append({
+                "label": tm,
+                "integrated_high": int(integrated["stck_hgpr"]),
+                "venue_candidate_high": proposed_high,
+                "integrated_low": int(integrated["stck_lwpr"]),
+                "venue_candidate_low": proposed_low,
+            })
+    price_envelope_crosscheck = {
+        "status": "MISMATCH_HOLD" if envelope_mismatches else "ARITHMETIC_MATCH_ONLY",
+        "mismatch_count": len(envelope_mismatches),
+        "mismatches": envelope_mismatches,
+        "source_clock_alignment_approved": False,
+        "usable_for_backtesting": False,
+    }
     daily_totals = {}
     daily_closes = {}
     for market in ("J", "NX", "UN"):
@@ -183,12 +211,15 @@ def audit_markets(*, root: str | Path, symbol: str, session: str,
         },
         "same_clock_label_overlaps_not_duplicate_trades": pairwise_clock_overlaps,
         "minute_volume_arithmetic_diagnostic": minute_crosscheck,
+        "minute_price_envelope_diagnostic": price_envelope_crosscheck,
         "official_daily_volume_arithmetic_diagnostic": daily_crosscheck,
         "source_quality_holds": [
             reason for reason, active in (
                 ("INTEGRATED_MINUTE_VOLUME_MISMATCH", bool(minute_mismatches)),
                 ("OFFICIAL_DAILY_VOLUME_MISMATCH",
                  daily_crosscheck["status"] == "MISMATCH_HOLD"),
+                ("INTEGRATED_MINUTE_PRICE_ENVELOPE_MISMATCH",
+                 bool(envelope_mismatches)),
                 ("DAILY_SCOPE_NOT_PROVEN", True),
                 ("EXECUTION_VENUE_NOT_PROVEN", True),
             ) if active
