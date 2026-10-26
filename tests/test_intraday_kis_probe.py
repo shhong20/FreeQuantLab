@@ -47,6 +47,7 @@ def mocked(pages, calls):
         assert url.endswith("/inquire-time-dailychartprice")
         assert kwargs["headers"]["tr_id"] == "FHKST03010230"
         assert kwargs["params"]["FID_COND_MRKT_DIV_CODE"] == "J"
+        assert kwargs["params"]["FID_PW_DATA_INCU_YN"] == "N"
         calls.append(kwargs)
         assert len(calls) <= len(pages)
         return Resp({"rt_cd": "0", "output2": pages[len(calls)-1]})
@@ -90,8 +91,8 @@ def test_invalid_source_date_or_volume_fails_closed(monkeypatch):
     monkeypatch.setenv("KIS_APP_KEY","X")
     monkeypatch.setenv("KIS_APP_SECRET","Y")
     source = samples()
-    source[0] = dict(source[0], stck_bsop_date="20261019")
-    with pytest.raises(KISMinuteError, match="different session"):
+    source[0] = dict(source[0], stck_bsop_date="20261021")
+    with pytest.raises(KISMinuteError, match="Unexpected newer"):
         probe_kis(symbol="005930", session=DAY, token="BEARER",
                   getter=mocked([source[:120]],[]), now=NOW)
     source = samples()
@@ -187,3 +188,67 @@ def test_cli_shows_controlled_reason_but_not_credentials(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "OSError" in err
     assert "SENSITIVE_FILESYSTEM_PATH_NOT_TO_SHOW" not in err
+
+
+def test_backward_api_boundary_accepts_target_only_and_audits_prior_day(monkeypatch, tmp_path):
+    monkeypatch.setenv("KIS_APP_KEY", "MOCK_APP_KEY")
+    monkeypatch.setenv("KIS_APP_SECRET", "MOCK_APP_SECRET")
+    rows = samples()
+    older = [
+        dict(rows[-1], stck_bsop_date="20261019", stck_cntg_hour="152900"),
+        dict(rows[-1], stck_bsop_date="20261019", stck_cntg_hour="152800"),
+    ]
+    pages = [rows[i:i+120] for i in range(0, len(rows), 120)]
+    pages[-1] = pages[-1] + older
+    calls = []
+    out = capture_kis(
+        symbol="005930", session=DAY, out_dir=tmp_path,
+        token="MOCK_BEARER", getter=mocked(pages, calls), now=NOW,
+    )
+    result = out["audit"]
+    assert result["raw_pages"] == 4
+    assert result["excluded_previous_session_rows"] == 2
+    assert result["pagination_stop"] == "previous_session_boundary"
+    assert result["unique_minute_labels"] == 381
+    assert result["missing_reference_labels"] == 0
+    assert result["past_data_include_flag"] == "N"
+    target = json.loads(
+        (Path(out["snapshot"])/"minute_observations_unverified.json").read_text()
+    )
+    assert len(target) == 381
+    assert {r["stck_bsop_date"] for r in target} == {"20261020"}
+    # Raw response remains byte-for-byte; the audit is not a cleaned source.
+    raw = json.loads((Path(out["snapshot"])/"raw"/"page_003.json").read_text())
+    assert any(r["stck_bsop_date"] == "20261019" for r in raw["output2"])
+
+
+def test_non_target_session_only_fails_closed(monkeypatch):
+    monkeypatch.setenv("KIS_APP_KEY", "X")
+    monkeypatch.setenv("KIS_APP_SECRET", "Y")
+    old = dict(samples()[0], stck_bsop_date="20261019")
+    with pytest.raises(KISMinuteError, match="No requested-session"):
+        probe_kis(
+            symbol="005930", session=DAY, token="MOCK_BEARER", now=NOW,
+            getter=mocked([[old]], []),
+        )
+
+
+def test_no_cross_session_contamination_even_with_matching_clock_label(monkeypatch):
+    monkeypatch.setenv("KIS_APP_KEY", "X")
+    monkeypatch.setenv("KIS_APP_SECRET", "Y")
+    rows = samples()[:80]
+    old = dict(rows[-1], stck_bsop_date="20261019",
+               stck_prpr="200", stck_oprc="200", stck_hgpr="201",
+               stck_lwpr="199")
+    # An out-of-day duplicate time label must never overwrite the target day.
+    original = rows[-1]
+    snapshots, target, audit = probe_kis(
+        symbol="005930", session=DAY, token="MOCK_BEARER", now=NOW,
+        getter=mocked([rows + [old]], []),
+    )
+    assert audit["excluded_previous_session_rows"] == 1
+    assert audit["pagination_stop"] == "previous_session_boundary"
+    assert len(target) == 80
+    assert next(r for r in target if r["stck_cntg_hour"] ==
+                original["stck_cntg_hour"])["stck_prpr"] == "100"
+    assert audit["automatic_5min_conversion"] is False
