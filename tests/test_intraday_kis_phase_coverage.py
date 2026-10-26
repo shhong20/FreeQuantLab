@@ -99,7 +99,7 @@ def test_minute_discrepancy_identity_is_algebra_not_trade_proof(tmp_path):
     s=audit(source_root=source,symbols=("005930",),
             sessions=("2026-10-23",),out_dir=tmp_path/"report")["summary"]
     c=s["cases"][0]
-    assert c["minute_volume_un_minus_j_plus_nx"] == -20
+    assert c["minute_volume_un_minus_venue_sum"] == -20
     assert c["market"]["UN"]["daily_minus_minute_volume"] == 920
     assert c["daily_gap_accounting_identity_holds"] is True
     assert c["accounting_identity_is_only_algebra_not_execution_attribution"] is True
