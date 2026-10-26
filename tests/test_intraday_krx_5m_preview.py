@@ -176,3 +176,73 @@ def test_chronologically_reversed_sessions_are_rejected(tmp_path):
         build(source_root=tmp_path/"source",symbols=("005930",),
               sessions=("2026-10-23","2026-10-22"),out_dir=tmp_path/"out")
     assert not (tmp_path/"out").exists()
+
+
+def test_sixty_complete_offline_days_can_be_assembled_but_not_traded(
+    tmp_path, monkeypatch
+):
+    # Keep the KIS capture plan limited to 5 API days. Offline assembly of
+    # already-persisted snapshots must allow at least 60 distinct past days.
+    from datetime import date, timedelta
+    import quantlab.intraday_krx_5m_preview as module
+
+    first=date(2026,6,1)
+    days=[]
+    for i in range(100):
+        d=first+timedelta(days=i)
+        if d.weekday()<5:
+            days.append(d.isoformat())
+        if len(days)==60:
+            break
+    assert len(days)==60
+    root=tmp_path/"source"
+    for d in days:
+        (root/f"KIS_J_EXT_005930_{d}").mkdir(parents=True)
+    def verified_source(source_root,symbol,session,market):
+        assert market=="J"
+        assert symbol=="005930"
+        assert (source_root/f"KIS_J_EXT_{symbol}_{session}").is_dir()
+        rows={t:{
+            "stck_bsop_date":session.replace("-",""),
+            "stck_cntg_hour":t,
+            "stck_oprc":"100","stck_hgpr":"100",
+            "stck_lwpr":"100","stck_prpr":"100",
+            "cntg_vol":"200",
+        } for t in CLOCKS+("153000",)}
+        return {
+            "source_minute_bar_sha256":"a"*64,
+            "daily_comparison":{
+                "requested_date_matches":1,
+                "date_only_public_fields":[{"acml_vol":"76000"}],
+            },
+        },rows
+    monkeypatch.setattr(module,"_read_one",verified_source)
+    s=build(source_root=root,symbols=("005930",),sessions=tuple(days),
+            out_dir=tmp_path/"research")["summary"]
+    r=s["readiness_by_symbol"]["005930"]
+    assert r["source_sessions"]==60
+    assert r["continuous_5m_candles"]==4560
+    assert r["sessions_missing_to_minimum"]==0
+    assert r["meeting_engine_minimum_sessions"] is True
+    assert r["eligible_to_call_intraday_research_evaluate"] is False
+    assert s["walkforward_return_calculated"] is False
+    assert s["usable_for_backtesting"] is False
+
+
+def test_offline_limit_does_not_expand_api_batch_limit(tmp_path):
+    from datetime import date,timedelta
+    from quantlab.intraday_kis_cohort_capture import plan
+    dates=[]
+    for i in range(20):
+        d=date(2026,10,1)+timedelta(days=i)
+        if d.weekday()<5:
+            dates.append(d.isoformat())
+        if len(dates)==6:
+            break
+    assert len(dates)==6
+    with pytest.raises(VenueProbeError):
+        plan(symbols="005930",sessions=",".join(dates),markets="J")
+    with pytest.raises(VenueProbeError,match="snapshot missing"):
+        build(source_root=tmp_path/"source",symbols=("005930",),
+              sessions=tuple(dates),out_dir=tmp_path/"target")
+    assert not (tmp_path/"target").exists()
