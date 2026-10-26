@@ -119,7 +119,7 @@ def run(*, tasks: list[dict], root: str | Path, execute: bool = False,
         getter: Callable = requests.get, sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
         pacing_seconds: float = 1.0, between_tasks_seconds: float = 2.0,
-        max_failures: int = 3) -> dict:
+        max_failures: int = 3, progress_root: str | Path | None = None) -> dict:
     if len(tasks) > MAX_TASKS or not tasks:
         raise VenueProbeError("Empty or oversized research capture plan")
     if not (0 <= between_tasks_seconds <= 30.0):
@@ -127,6 +127,8 @@ def run(*, tasks: list[dict], root: str | Path, execute: bool = False,
     if not (1 <= max_failures <= 3):
         raise VenueProbeError("Fail-fast threshold must be 1..3")
     root = Path(root).expanduser().resolve()
+    progress_path = (Path(progress_root).expanduser().resolve()
+                     if progress_root is not None else root)
     existing_status: list[dict] = []
     for task in tasks:
         folder = root / f"KIS_{task['market']}_EXT_{task['symbol']}_{task['session']}"
@@ -154,6 +156,7 @@ def run(*, tasks: list[dict], root: str | Path, execute: bool = False,
     if not (key and secret and token):
         raise VenueProbeError("Local KIS authentication required before execute")
     root.mkdir(parents=True, exist_ok=True)
+    progress_path.mkdir(parents=True, exist_ok=True)
     pacing = PacedGetter(getter=getter, sleep=sleep, clock=clock,
                          minimum=pacing_seconds)
     failures = 0
@@ -183,20 +186,20 @@ def run(*, tasks: list[dict], root: str | Path, execute: bool = False,
                 "EGW00201", "EGW00202", "EGW00133"
             }:
                 report["status"] = "STOPPED_ON_FAILURE_LIMIT"
-                _save_progress(root, report)
+                _save_progress(progress_path, report)
                 break
-        _save_progress(root, report)
+        _save_progress(progress_path, report)
     else:
         report["status"] = (
             "COMPLETED_WITH_FAILURES" if failures else "CAPTURES_COMPLETED"
         )
-        _save_progress(root, report)
+        _save_progress(progress_path, report)
     report["http_get_requests"] = pacing.calls
     report["completed_snapshot_count"] = sum(
         x["status"] in ("COLLECTED_VERIFIED", "EXISTING_VERIFIED")
         for x in report["tasks"]
     )
-    _save_progress(root, report)
+    _save_progress(progress_path, report)
     return report
 
 
