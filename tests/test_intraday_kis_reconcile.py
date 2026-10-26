@@ -152,6 +152,9 @@ def test_no_time_offset_or_future_minute_and_no_fake_zero_fill(tmp_path):
 def test_equal_legacy_daily_values_do_not_prove_venue_parity(tmp_path):
     snapshot = make_snapshot(tmp_path)
     db = daily_db(tmp_path, close=105.0, volume=4577.0)
+    # The synthetic 15:30 auction (105) is also the full-day high.
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE long_bars SET high=105 WHERE ticker=?", (SYMBOL,))
     result = inspect_snapshot(
         snapshot=snapshot, daily_db=db, out_dir=tmp_path/"derived",
     )
