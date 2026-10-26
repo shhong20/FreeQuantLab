@@ -32,7 +32,9 @@ def make_getter(market, *, consistent_integrated=False):
             return Resp({"rt_cd": "0", "output2": [
                 {"stck_bsop_date": "20261023", "stck_cntg_hour": clock,
                  "stck_oprc": str(price), "stck_hgpr": str(price),
-                 "stck_lwpr": str(price), "stck_prpr": str(price),
+                 "stck_lwpr": str(99 if consistent_integrated and market == "UN"
+                                  and clock == "090000" else price),
+                 "stck_prpr": str(price),
                  "cntg_vol": ("200" if consistent_integrated and market == "UN"
                              and clock in ("090000", "155500") else "100")}
                 for clock,price in (
@@ -40,7 +42,9 @@ def make_getter(market, *, consistent_integrated=False):
                     if market == "J" else
                     [("080000", 97), ("090000", 99), ("155500", 101)]
                     if market == "NX" else
-                    [("080000", 98), ("090000", 99), ("155500", 102)]
+                    ([("080000", 97), ("090000", 100), ("155500", 101)]
+                     if consistent_integrated else
+                     [("080000", 98), ("090000", 99), ("155500", 102)])
                 )
             ]})
         return Resp({"rt_cd": "0", "output2": [
@@ -89,8 +93,8 @@ def test_venue_comparison_does_not_fabricate_market_trades(tmp_path):
         "J": -100, "NX": 0, "UN": -300
     }
     assert "INTEGRATED_MINUTE_VOLUME_MISMATCH" in report["source_quality_holds"]
-    assert report["minute_price_envelope_diagnostic"]["status"] == "ARITHMETIC_MATCH_ONLY"
-    assert report["minute_price_envelope_diagnostic"]["mismatch_count"] == 0
+    assert report["minute_price_envelope_diagnostic"]["status"] == "MISMATCH_HOLD"
+    assert report["minute_price_envelope_diagnostic"]["mismatch_count"] == 3
     assert day_check["approved"] is False
     assert Path(result["output"]).is_dir()
     with pytest.raises(VenueProbeError, match="already exists"):
@@ -126,6 +130,7 @@ def test_equal_minute_sums_do_not_prove_trade_identity(tmp_path):
     daily = report["official_daily_volume_arithmetic_diagnostic"]
     assert minute["status"] == "ARITHMETIC_MATCH_ONLY"
     assert minute["mismatch_count"] == 0
+    assert report["minute_price_envelope_diagnostic"]["status"] == "ARITHMETIC_MATCH_ONLY"
     assert minute["minute_integrated_minus_venue_sum"] == 0
     assert minute["execution_identity_verified"] is False
     assert minute["approved"] is False
