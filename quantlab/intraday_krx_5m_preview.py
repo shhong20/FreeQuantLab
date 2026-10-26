@@ -7,13 +7,16 @@ requires >=60 sessions, start-labeled bars and separately verified policy.
 from __future__ import annotations
 
 import argparse
+from datetime import date, datetime
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
+from zoneinfo import ZoneInfo
 
-from .intraday_kis_cohort_capture import DEFAULT_DATES, DEFAULT_SYMBOLS, _comma_list, plan
+from .intraday_kis_cohort_capture import DEFAULT_DATES, DEFAULT_SYMBOLS, _comma_list
 from .intraday_kis_venue_compare import _read_one
 from .intraday_kis_venues import VenueProbeError
 
@@ -27,6 +30,32 @@ FIELDS = {
     "volume": "cntg_vol",
 }
 MIN_SESSIONS_FOR_EXISTING_ENGINE = 60
+MAX_OFFLINE_SESSIONS = 120
+MAX_OFFLINE_SYMBOLS = 3
+
+
+def validate_offline_plan(symbols: tuple[str,...], sessions: tuple[str,...]) -> None:
+    """Offline scans may exceed small API batches, but never call KIS."""
+    if (not 1 <= len(symbols) <= MAX_OFFLINE_SYMBOLS or
+            len(set(symbols)) != len(symbols) or
+            any(not isinstance(s,str) or not re.fullmatch(r"[0-9]{6}",s)
+                for s in symbols)):
+        raise VenueProbeError("Invalid bounded offline stock symbols")
+    if not 1 <= len(sessions) <= MAX_OFFLINE_SESSIONS or (
+            len(set(sessions)) != len(sessions)):
+        raise VenueProbeError("Offline date count invalid or duplicated")
+    if tuple(sessions) != tuple(sorted(sessions)):
+        raise VenueProbeError("KRX 5m research sessions must be chronological")
+    today=datetime.now(ZoneInfo("Asia/Seoul")).date()
+    for session in sessions:
+        if not isinstance(session,str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}",session):
+            raise VenueProbeError("Invalid ISO offline research session")
+        try:
+            parsed=date.fromisoformat(session)
+        except ValueError as exc:
+            raise VenueProbeError("Invalid calendar date") from exc
+        if parsed>=today or parsed.weekday()>=5:
+            raise VenueProbeError("Offline KRX sessions must be past weekdays")
 
 
 def _json_bytes(value: object) -> bytes:
@@ -112,11 +141,7 @@ def candidate(root: Path, *, symbol: str, session: str) -> dict:
 def build(*, source_root: str | Path, out_dir: str | Path,
           symbols: tuple[str,...], sessions: tuple[str,...],
           baseline_root: str | Path | None = None) -> dict:
-    plan(symbols=",".join(symbols),sessions=",".join(sessions),markets="J")
-    # Existing intraday_research.validate requires strictly chronological
-    # 5-minute timestamps. Don't silently reorder caller-provided sessions.
-    if tuple(sessions) != tuple(sorted(sessions)):
-        raise VenueProbeError("KRX 5m research sessions must be chronological")
+    validate_offline_plan(symbols,sessions)
     root=Path(source_root).expanduser().resolve()
     baseline=Path(baseline_root).expanduser().resolve() if baseline_root else None
     target=Path(out_dir).expanduser().resolve()
