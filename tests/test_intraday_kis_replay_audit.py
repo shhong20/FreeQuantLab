@@ -165,3 +165,71 @@ def test_replay_multi_market_identity_is_per_venue(tmp_path):
     assert result["status"] == "REPLAY_OBSERVATIONS_REPRODUCED"
     assert set(result["markets"]) == {"J","NX","UN"}
     assert all(result["markets"][m]["changed_label_count"]==0 for m in ("J","NX","UN"))
+
+
+def _rewrite_mock_vendor_raw(root, *, part, mutate):
+    """Test helper: simulate an independently valid second vendor response."""
+    folder=root/f"KIS_UN_EXT_{SYMBOL}_{DATE}"
+    file=folder/"raw"/part
+    payload=json.loads(file.read_bytes())
+    mutate(payload)
+    blob=json.dumps(payload).encode("utf-8")
+    file.write_bytes(blob)
+    manifest=folder/"audit.json"
+    report=json.loads(manifest.read_bytes())
+    if part=="daily.json":
+        report["daily_comparison"]["raw_sha256"]=sha256(blob).hexdigest()
+    else:
+        report["page_sha256"][int(part.removeprefix("minute_").removesuffix(".json"))] = sha256(blob).hexdigest()
+    manifest.write_text(json.dumps(report), encoding="utf-8")
+
+
+def test_raw_output1_changes_without_historical_output2_changes(tmp_path):
+    baseline,replay=setup_roots(tmp_path)
+    _rewrite_mock_vendor_raw(
+        replay, part="minute_000.json",
+        mutate=lambda p: p.update(output1={
+            "stck_prpr":"CUSTOM_VENDOR_LIVE_HEADER_VALUE_SHOULD_NOT_LEAK",
+            "acml_vol":"7654321",
+        }),
+    )
+    _rewrite_mock_vendor_raw(
+        replay, part="daily.json",
+        mutate=lambda p: p.update(output1={"prdy_ctrt":"123.4"}),
+    )
+    result=compare_replay(baseline_root=baseline,replay_root=replay,
+                          symbol=SYMBOL,session=DATE,markets=("UN",),
+                          out_dir=tmp_path/"comparison")["audit"]
+    un=result["markets"]["UN"]
+    raw=un["raw_historical_payload_comparison"]
+    assert result["status"] == "REPLAY_OBSERVATIONS_REPRODUCED"
+    assert un["normal_observation_content_identical"] is True
+    assert un["raw_page_hashes_identical"] is False
+    assert un["official_daily_source"]["same_raw_sha256"] is False
+    assert raw["classification"] == "HISTORICAL_BARS_SAME_VENDOR_OUTPUT1_CHANGED"
+    assert raw["minute_page_historical_output2_all_identical"] is True
+    assert raw["historical_daily_output2_identical"] is True
+    assert raw["daily_live_quote_header_output1_identical"] is False
+    assert raw["minute_page_comparisons"][0]["historical_output2_identical"] is True
+    assert raw["minute_page_comparisons"][0]["changed_header_field_names_only"] == [
+        "acml_vol", "stck_prpr"
+    ]
+    assert "CUSTOM_VENDOR_LIVE_HEADER_VALUE_SHOULD_NOT_LEAK" not in json.dumps(result)
+    assert raw["raw_body_values_disclosed"] is False
+
+
+def test_raw_output2_change_is_held_even_if_normalized_snapshot_unchanged(tmp_path):
+    baseline,replay=setup_roots(tmp_path)
+    _rewrite_mock_vendor_raw(
+        replay, part="minute_000.json",
+        mutate=lambda p: p["output2"][0].update(vendor_unverified_new_field="different"),
+    )
+    result=compare_replay(baseline_root=baseline,replay_root=replay,
+                          symbol=SYMBOL,session=DATE,markets=("UN",),
+                          out_dir=tmp_path/"comparison")["audit"]
+    raw=result["markets"]["UN"]["raw_historical_payload_comparison"]
+    assert result["status"] == "REPLAY_HISTORICAL_PAYLOAD_CHANGED_HOLD"
+    assert raw["classification"] == "HISTORICAL_PAGE_OR_DAILY_PAYLOAD_DIFFERENCE_HOLD"
+    assert raw["minute_page_historical_output2_all_identical"] is False
+    assert result["markets"]["UN"]["normal_observation_content_identical"] is True
+    assert result["usable_for_backtesting"] is False
