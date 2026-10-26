@@ -262,11 +262,17 @@ def compare_replay(*, baseline_root: str | Path, replay_root: str | Path,
                     base, symbol, session, baseline[1], replay[1]
                 )
             )
-    status = (
-        "REPLAY_OBSERVATIONS_REPRODUCED"
-        if all(comparisons[m]["normal_observation_content_identical"] for m in markets)
-        else "REPLAY_OBSERVATIONS_CHANGED_HOLD"
-    )
+    # Normalized changes are most actionable; even if normalized bars match,
+    # the raw historical arrays can differ in fields outside the allowlist.
+    if not all(comparisons[m]["normal_observation_content_identical"] for m in markets):
+        status = "REPLAY_OBSERVATIONS_CHANGED_HOLD"
+    elif any(
+        comparisons[m]["raw_historical_payload_comparison"]["classification"] ==
+        "HISTORICAL_PAGE_OR_DAILY_PAYLOAD_DIFFERENCE_HOLD" for m in markets
+    ):
+        status = "REPLAY_HISTORICAL_PAYLOAD_CHANGED_HOLD"
+    else:
+        status = "REPLAY_OBSERVATIONS_REPRODUCED"
     result = {
         "status": status,
         "session": session,
