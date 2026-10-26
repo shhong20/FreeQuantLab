@@ -97,19 +97,34 @@ def probe_kis(*, symbol: str, session: str, token: str,
             body = json.loads(raw)
         except (ValueError, UnicodeError) as exc:
             raise KISMinuteError("Invalid KIS minute JSON") from exc
-        if not isinstance(body, dict) or str(body.get("rt_cd")) != "0":
-            raise KISMinuteError("KIS provider rejected minute-bar request")
+        if not isinstance(body, dict):
+            raise KISMinuteError("KIS provider response was not a JSON object")
+        if str(body.get("rt_cd")) != "0":
+            # Never echo provider message/body: it may contain account details.
+            candidate = body.get("msg_cd")
+            safe_code = (candidate if isinstance(candidate, str) and
+                         re.fullmatch(r"[A-Za-z0-9_-]{1,32}", candidate)
+                         else "UNKNOWN")
+            raise KISMinuteError(
+                f"KIS minute market-data API rejected request (msg_cd={safe_code})"
+            )
         data = body.get("output2")
         if not isinstance(data, list) or len(data) > 120:
-            raise KISMinuteError("KIS output2 is not a valid <=120 row page")
+            raise KISMinuteError("KIS output2 was not a list of <=120 minute bars")
         if not data:
             pagination_stop = "empty_page"
             snapshots.append(raw)
             break
         page_times = []
         for item in data:
-            if not isinstance(item, dict) or any(k not in item for k in FIELDS):
-                raise KISMinuteError("KIS raw minute fields missing")
+            if not isinstance(item, dict):
+                raise KISMinuteError("KIS minute row was not a JSON object")
+            missing = [k for k in FIELDS if k not in item]
+            if missing:
+                # FIELDS is a fixed allowlist of public field names.
+                raise KISMinuteError(
+                    f"KIS minute required field missing: {','.join(missing)}"
+                )
             if str(item["stck_bsop_date"]) != ymd:
                 raise KISMinuteError("Provider returned different session")
             tm = str(item["stck_cntg_hour"])
@@ -230,7 +245,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except (KISMinuteError, DataError, ValueError, requests.RequestException, OSError) as exc:
+    except (KISMinuteError, DataError) as exc:
+        # These exceptions contain controlled, credential-free messages.
+        p.exit(2, f"FAIL CLOSED (minute provenance only): {type(exc).__name__}: {exc}\n")
+    except (ValueError, requests.RequestException, OSError) as exc:
         p.exit(2, f"FAIL CLOSED (minute provenance only): {type(exc).__name__}\n")
 
 
