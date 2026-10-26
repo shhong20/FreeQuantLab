@@ -52,12 +52,12 @@ def make_getter(*, response=None, called=None):
         assert url==app.URL
         assert kw["headers"]["tr_id"]==app.TR_ID
         assert kw["headers"]["authorization"]=="Bearer SAFE_TOKEN"
-        assert kw["params"]["FID_COND_MRKT_DIV_CODE"]=="J"
-        assert kw["params"]["FID_COND_SCR_DIV_CODE"]=="20176"
-        assert kw["params"]["FID_INPUT_ISCD"]=="0000"
-        assert kw["params"]["FID_RANK_SORT_CLS_CODE"] in ("1","2")
+        assert kw["params"]["fid_cond_mrkt_div_code"]=="J"
+        assert kw["params"]["fid_cond_scr_div_code"]=="20176"
+        assert kw["params"]["fid_input_iscd"]=="0000"
+        assert kw["params"]["fid_rank_sort_cls_code"] in ("1","2")
         assert "FID_INPUT_DATE_1" not in kw["params"]
-        calls.append(kw["params"]["FID_RANK_SORT_CLS_CODE"])
+        calls.append(kw["params"]["fid_rank_sort_cls_code"])
         return Response(response or vendor_data())
     return getter
 
@@ -178,7 +178,7 @@ def test_live_cli_with_mocked_oauth_get_and_resume_no_second_oauth(
         assert kw["key"] == "LOCAL_TEST_KEY"
         assert kw["secret"] == "LOCAL_TEST_SECRET"
         assert kw["token"] == "SAFE_TOKEN"
-        requests.append(kw["params"]["FID_RANK_SORT_CLS_CODE"])
+        requests.append(kw["params"]["fid_rank_sort_cls_code"])
         return json.dumps(vendor_data()).encode()
     monkeypatch.setattr(app, "_get", get)
     cmd=["--phase","PRE","--expected-session",DAY,
