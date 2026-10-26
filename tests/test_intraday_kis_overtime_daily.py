@@ -174,3 +174,20 @@ def test_default_cli_is_no_auth_no_files(tmp_path,capsys):
     assert report["requests"]==2
     assert report["historical_date_in_request"] is False
     assert not path.exists()
+
+
+def test_equal_venue_gap_and_overtime_volume_still_cannot_certify_scope(tmp_path):
+    overtime=tmp_path/"overtime"
+    cohort=tmp_path/"cohort"
+    offline_capture(overtime)
+    # Numerically equal values do not prove market/phase identity.
+    make_krx_daily(cohort,daily_total=179883,minute_total=800)
+    result=bridge(overtime_root=overtime,cohort_root=cohort,
+                  symbols=(TICKER,),sessions=("2026-10-23",),
+                  out_dir=tmp_path/"compare")["audit"]
+    record=result["cases"][0]
+    assert record["comparison_difference_gap_minus_untp_volume"] == 0
+    assert record["same_venue_and_time_scope_proven"] is False
+    assert record["disposition"] == "NO_AUTOMATIC_VOLUME_REPAIR_OR_BACKTEST"
+    assert result["all_krx_volume_gaps_attributed"] is False
+    assert result["usable_for_backtesting"] is False
