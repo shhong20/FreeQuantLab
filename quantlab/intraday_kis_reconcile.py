@@ -127,6 +127,8 @@ def _candles(data: list[dict], session: str) -> tuple[list[dict], dict]:
         "continuous_volume": regular_volume,
         "closing_auction_time_label": "153000",
         "closing_auction_price": closing_price,
+        "closing_auction_high": auction["high"],
+        "closing_auction_low": auction["low"],
         "closing_auction_volume": auction["volume"],
         "candidate_total_volume": regular_volume + auction["volume"],
         "candles_5m": len(bars),
@@ -164,8 +166,8 @@ def _reconcile_daily(path: str | Path | None, *, symbol: str, session: str,
     reference = dict(zip(names, row[:5]))
     observed = {
         "open": candidate["continuous_open"],
-        "high": candidate["continuous_high"],
-        "low": candidate["continuous_low"],
+        "high": max(candidate["continuous_high"], candidate["closing_auction_high"]),
+        "low": min(candidate["continuous_low"], candidate["closing_auction_low"]),
         "close": candidate["closing_auction_price"],
         "volume": candidate["candidate_total_volume"],
     }
