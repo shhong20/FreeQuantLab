@@ -170,3 +170,65 @@ def test_cli_init_and_non_auth_preview_reuses_pinned_manifest(tmp_path,capsys):
     assert x["pending"]==10
     assert x["status"]=="PREVIEW_ONLY"
     assert not source.exists()
+
+
+def test_all_batch_preview_no_oauth_or_network(tmp_path,capsys):
+    folder,root,p=build_plan(tmp_path,count=60,with_existing=True)
+    r=backfill.run_all(plan_dir=folder)
+    assert r["status"]=="ALL_BATCHES_PREVIEW_NO_NETWORK"
+    assert r["batch_count"]==12
+    assert r["remaining_before"]==118
+    assert not (root/"batch_progress.json").exists()
+    assert backfill.main(["--all-batches","--plan-dir",str(folder)])==0
+    summary=json.loads(capsys.readouterr().out)
+    assert summary["remaining_before"]==118
+    assert summary["orders_enabled"] is False
+
+
+def test_all_batches_stops_on_first_failed_batch_and_never_skips(tmp_path,monkeypatch):
+    folder,root,p=build_plan(tmp_path,count=6)
+    captured=[]
+    original=backfill.run_batch
+    def simulated(*,plan_dir,batch_index,execute=False,**kw):
+        if not execute:
+            return original(plan_dir=plan_dir,batch_index=batch_index)
+        captured.append(batch_index)
+        return {
+            "status":"STOPPED_ON_FAILURE_LIMIT", "pending":10,
+            "verified_existing":0, "verified_existing_or_new":0,
+            "http_get_requests":1,
+        }
+    monkeypatch.setattr(backfill,"run_batch",simulated)
+    result=backfill.run_all(plan_dir=folder,execute=True,
+                            key="DUMMY_KEY",secret="DUMMY_SECRET",token="DUMMY_TOKEN",
+                            pause=lambda _:None)
+    assert captured==[0]
+    assert result["status"]=="ALL_BATCHES_PARTIALLY_COLLECTED_HOLD"
+    assert result["remaining_after"]==12
+    assert result["batch_reports"][0]["status"]=="STOPPED_ON_FAILURE_LIMIT"
+
+
+def test_all_batch_local_fake_network_can_complete_and_resume_without_requery(
+    tmp_path,monkeypatch
+):
+    folder,root,p=build_plan(tmp_path,count=1)
+    original=kis_run
+    get_calls=[]
+    def local_get(url,**kwargs):
+        get_calls.append(url)
+        return get(url,**kwargs)
+    def local_run(**kw):
+        return original(**(kw|{"between_tasks_seconds":0.0}),
+                        getter=local_get,sleep=lambda _:None,clock=lambda:0.0)
+    monkeypatch.setattr(backfill,"capture_run",local_run)
+    result=backfill.run_all(plan_dir=folder,execute=True,
+                            key="LOCAL_DUMMY_KEY",secret="LOCAL_DUMMY_SECRET",
+                            token="LOCAL_DUMMY_TOKEN",pause=lambda _:None)
+    assert result["status"]=="ALL_BATCHES_VERIFIED_COMPLETED"
+    assert result["snapshots_verified"]==2
+    assert result["remaining_after"]==0
+    assert len(get_calls)==4
+    after=backfill.run_all(plan_dir=folder,execute=True,pause=lambda _:None)
+    assert after["remaining_before"]==0
+    assert after["status"]=="ALL_BATCHES_VERIFIED_COMPLETED"
+    assert len(get_calls)==4
