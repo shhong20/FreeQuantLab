@@ -299,14 +299,13 @@ def main(argv: list[str] | None = None) -> int:
         out = []
         requested = 0
         for symbol in symbols:
-            if i:
-                time.sleep(2.0)
-            target = Path(args.out_dir).expanduser().resolve() / (
-                f"KIS_OVERTIME_DAILY_J_{symbol}"
-            )
             if symbol in already_done:
                 out.append({"symbol": symbol, "status": "EXISTING_VERIFIED"})
                 continue
+            # Pace *new HTTP requests*, not source filenames. This also
+            # handles the case where the first symbol is already persisted.
+            if requested:
+                time.sleep(2.0)
             requested += 1
             new = capture_one(
                 symbol=symbol, sessions=sessions, out_dir=args.out_dir,
