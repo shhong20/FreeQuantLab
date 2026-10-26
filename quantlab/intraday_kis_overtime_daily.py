@@ -280,22 +280,34 @@ def main(argv: list[str] | None = None) -> int:
                 "orders_enabled": False,
             }, ensure_ascii=False, sort_keys=True))
             return 0
-        key, secret = os.getenv("KIS_APP_KEY", ""), os.getenv("KIS_APP_SECRET", "")
-        if not key or not secret:
-            raise VenueProbeError("Missing local KIS credentials")
-        token = _kis_token()
+        resolved_root = Path(args.out_dir).expanduser().resolve()
+        already_done = []
+        for symbol in symbols:
+            target = resolved_root / f"KIS_OVERTIME_DAILY_J_{symbol}"
+            if target.exists():
+                _read_snapshot(resolved_root, symbol, sessions)
+                already_done.append(symbol)
+        # Avoid an unnecessary OAuth token request if nothing needs capture.
+        need_fetch = any(symbol not in already_done for symbol in symbols)
+        if need_fetch:
+            key, secret = os.getenv("KIS_APP_KEY", ""), os.getenv("KIS_APP_SECRET", "")
+            if not key or not secret:
+                raise VenueProbeError("Missing local KIS credentials")
+            token = _kis_token()
+        else:
+            key = secret = token = ""
         out = []
-        for i, symbol in enumerate(symbols):
+        requested = 0
+        for symbol in symbols:
             if i:
                 time.sleep(2.0)
             target = Path(args.out_dir).expanduser().resolve() / (
                 f"KIS_OVERTIME_DAILY_J_{symbol}"
             )
-            if target.exists():
-                _read_snapshot(Path(args.out_dir).expanduser().resolve(),
-                               symbol, sessions)
+            if symbol in already_done:
                 out.append({"symbol": symbol, "status": "EXISTING_VERIFIED"})
                 continue
+            requested += 1
             new = capture_one(
                 symbol=symbol, sessions=sessions, out_dir=args.out_dir,
                 key=key, secret=secret, token=token
@@ -306,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                 "missing_dates": new["audit"]["requested_days_not_in_response"],
             })
         print(json.dumps({"status":"SOURCE_ONLY_NO_RECONCILIATION",
+                          "newly_requested_symbols":requested,
                           "results":out},ensure_ascii=False,sort_keys=True))
         return 0
     except Exception as exc:
