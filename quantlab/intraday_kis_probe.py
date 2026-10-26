@@ -71,6 +71,7 @@ def probe_kis(*, symbol: str, session: str, token: str,
     records: dict[str, dict] = {}
     pagination_stop = "page_limit"
     duplicate_same = 0
+    excluded_previous_session_rows = 0
     for _ in range(MAX_PAGES):
         if cursor in seen_cursors:
             raise KISMinuteError("KIS pagination cursor repeated")
@@ -80,7 +81,7 @@ def probe_kis(*, symbol: str, session: str, token: str,
             "FID_INPUT_ISCD": symbol,
             "FID_INPUT_HOUR_1": cursor,
             "FID_INPUT_DATE_1": ymd,
-            "FID_PW_DATA_INCU_YN": "Y",
+            "FID_PW_DATA_INCU_YN": "N",
             "FID_FAKE_TICK_INCU_YN": "",
         }
         try:
@@ -116,6 +117,7 @@ def probe_kis(*, symbol: str, session: str, token: str,
             snapshots.append(raw)
             break
         page_times = []
+        crossed_previous_session = False
         for item in data:
             if not isinstance(item, dict):
                 raise KISMinuteError("KIS minute row was not a JSON object")
@@ -125,8 +127,16 @@ def probe_kis(*, symbol: str, session: str, token: str,
                 raise KISMinuteError(
                     f"KIS minute required field missing: {','.join(missing)}"
                 )
-            if str(item["stck_bsop_date"]) != ymd:
-                raise KISMinuteError("Provider returned different session")
+            item_day = str(item["stck_bsop_date"])
+            if item_day != ymd:
+                # The vendor's backwards-scrolling endpoint may include
+                # prior-session bars at the boundary. Keep the *raw* page for
+                # provenance but never mix it with the requested session.
+                if re.fullmatch(r"[0-9]{8}", item_day) and item_day < ymd:
+                    excluded_previous_session_rows += 1
+                    crossed_previous_session = True
+                    continue
+                raise KISMinuteError("Unexpected newer or invalid vendor session")
             tm = str(item["stck_cntg_hour"])
             if not re.fullmatch(r"[0-2][0-9][0-5][0-9][0-5][0-9]", tm):
                 raise KISMinuteError("Malformed minute time label")
@@ -155,6 +165,13 @@ def probe_kis(*, symbol: str, session: str, token: str,
             records[tm] = canonical
             page_times.append(tm)
         snapshots.append(raw)
+        if crossed_previous_session:
+            if not records:
+                raise KISMinuteError("No requested-session bars in vendor response")
+            pagination_stop = "previous_session_boundary"
+            break
+        if not page_times:
+            raise KISMinuteError("No requested-session minute labels in page")
         oldest = min(page_times)
         if oldest >= cursor:
             raise KISMinuteError("KIS minute pagination made no backward progress")
@@ -178,6 +195,8 @@ def probe_kis(*, symbol: str, session: str, token: str,
         "status": "KIS_ONE_DAY_MINUTE_PROVENANCE_ONLY_NO_5MIN_BACKTEST",
         "session": session, "symbol": symbol, "tr_id": TR_ID,
         "raw_pages": len(snapshots), "raw_sha256": [sha256(x).hexdigest() for x in snapshots],
+        "past_data_include_flag": "N",
+        "excluded_previous_session_rows": excluded_previous_session_rows,
         "unique_minute_labels": len(ordered), "benign_page_boundary_duplicates": duplicate_same,
         "continuous_reference_0900_1519_minute_labels": len(present),
         "continuous_reference_expected_max": 380,
