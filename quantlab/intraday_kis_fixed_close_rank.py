@@ -128,16 +128,16 @@ def capture(*, session: str, phase: str, symbols: tuple[str,...],
         raise VenueProbeError("Immutable same-day phase snapshot already exists")
     rank=PHASES[phase][0]
     params={
-        "FID_INPUT_PRICE_1":"",
-        "FID_COND_MRKT_DIV_CODE":"J",
-        "FID_COND_SCR_DIV_CODE":"20176",
-        "FID_RANK_SORT_CLS_CODE":rank,
-        "FID_DIV_CLS_CODE":"0",
-        "FID_INPUT_ISCD":"0000",
-        "FID_TRGT_EXLS_CLS_CODE":"0",
-        "FID_TRGT_CLS_CODE":"0",
-        "FID_VOL_CNT":"",
-        "FID_INPUT_PRICE_2":"",
+        "fid_input_price_1":"",
+        "fid_cond_mrkt_div_code":"J",
+        "fid_cond_scr_div_code":"20176",
+        "fid_rank_sort_cls_code":rank,
+        "fid_div_cls_code":"0",
+        "fid_input_iscd":"0000",
+        "fid_trgt_exls_cls_code":"0",
+        "fid_trgt_cls_code":"0",
+        "fid_vol_cnt":"",
+        "fid_input_price_2":"",
     }
     response=_get(URL,params=params,key=key,secret=secret,
                   token=token,tr_id=TR_ID,getter=getter)
