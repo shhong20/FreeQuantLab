@@ -330,7 +330,8 @@ def main(argv: list[str] | None = None) -> int:
         print(payload)
         return 0
     except (IntradayDataError, ValueError, OSError) as exc:
-        p.exit(2, f"FAIL CLOSED (no trading): {exc}\n")
+        print(f"FAIL CLOSED (no trading): {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
