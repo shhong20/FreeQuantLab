@@ -87,6 +87,7 @@ def parse_response(raw: bytes, *, symbol: str,
     return {
         "status": "OVERTIME_RECENT_DAY_SOURCE_ONLY_NOT_KRX_GAP_EXPLANATION",
         "symbol": symbol,
+        "requested_sessions": list(sessions),
         "market": MARKET,
         "tr_id": TR_ID,
         "endpoint_scope": "ROLLING_LAST_30_NO_HISTORICAL_DATE_QUERY",
@@ -157,7 +158,15 @@ def _read_snapshot(root: Path, symbol: str, sessions: tuple[str, ...]) -> dict:
             raise VenueProbeError("Overtime source identity/status invalid")
         if sha256(raw).hexdigest() != report.get("raw_sha256"):
             raise VenueProbeError("Overtime vendor response SHA mismatch")
-        regenerated = parse_response(raw, symbol=symbol, sessions=sessions)
+        originally_requested = report.get("requested_sessions")
+        if (not isinstance(originally_requested, list)
+                or not originally_requested
+                or any(not isinstance(x, str) for x in originally_requested)
+                or any(x not in originally_requested for x in sessions)):
+            raise VenueProbeError("Overtime snapshot was not collected for requested sessions")
+        regenerated = parse_response(
+            raw, symbol=symbol, sessions=tuple(originally_requested)
+        )
         for field in (
             "matched_requested_days", "requested_days_not_in_response",
             "response_records", "returned_date_bounds"
