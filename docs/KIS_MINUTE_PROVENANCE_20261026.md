@@ -39,3 +39,13 @@ python -m quantlab.intraday_kis_probe \
 4. 별도의 **공식 15:30 종가** 및 기업행동/ETF 분배금 근거를 확보한 후에만 한국 갭 전략을 평가한다.
 
 이 PR은 기존 90일 평가, 코인 시세, 주식 일봉 DB, paper/live 거래를 변경하지 않는다. CI는 전부 **가짜 제공사 응답**으로만 검증한다.
+
+## 요청일 이전 분봉이 섞이는 API 페이지 경계 (2026-10-26 수정)
+
+- 주식일별분봉조회 `FID_PW_DATA_INCU_YN`은 이제 공식 예제의 기본값과 같은 `N`으로 요청한다. 이전 `Y` 설정은 조회 구간이 요청일의 09:00 이전으로 넘어가면 이전 영업일 분봉을 포함할 수 있다.
+- 제공사가 `N`에도 이전 영업일 분봉을 반환하면 **원본 HTTP 페이지는 SHA-256과 함께 보관**하고, 1일치 검증 대상에는 `stck_bsop_date`가 지정 날짜와 같은 행만 포함한다. 이전 영업일 행 수를 `excluded_previous_session_rows`로 기록하고 페이지네이션을 종료한다.
+- 더 미래 날짜나 잘못된 날짜는 오류로 차단하고, **지정 날짜 분봉이 한 건도 없으면 오류**로 종료한다.
+- 결측 1분봉을 보간하지 않으며, 다른 날짜의 시간 라벨이 충돌해도 지정 날짜 데이터에 덮어쓰지 않는다.
+- 이 단계의 출력은 원본 감사 전용으로, 여전히 `automatic_5min_conversion=false`, `backtest_or_orders_allowed=false`이다.
+
+공식 공급사 예제: https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_time_dailychartprice/inquire_time_dailychartprice.py
