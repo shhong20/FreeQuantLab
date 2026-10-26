@@ -113,6 +113,10 @@ def build(*, source_root: str | Path, out_dir: str | Path,
           symbols: tuple[str,...], sessions: tuple[str,...],
           baseline_root: str | Path | None = None) -> dict:
     plan(symbols=",".join(symbols),sessions=",".join(sessions),markets="J")
+    # Existing intraday_research.validate requires strictly chronological
+    # 5-minute timestamps. Don't silently reorder caller-provided sessions.
+    if tuple(sessions) != tuple(sorted(sessions)):
+        raise VenueProbeError("KRX 5m research sessions must be chronological")
     root=Path(source_root).expanduser().resolve()
     baseline=Path(baseline_root).expanduser().resolve() if baseline_root else None
     target=Path(out_dir).expanduser().resolve()
