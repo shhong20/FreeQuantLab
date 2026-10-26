@@ -10,7 +10,6 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
-import re
 import shutil
 import tempfile
 
@@ -116,7 +115,7 @@ def survey(*, baseline_root: str | Path, newer_root: str | Path,
     total_changes = sum(r["changed_minute_labels_total"] for r in complete)
     summary = {
         "status": (
-            "NO_COMPARABLE_REVISIONS" if not complete else
+            "NO_COMPARABLE_CAPTURE_PAIRS" if not complete else
             "HISTORICAL_SOURCE_REVISION_HOLD" if changed_pairs else
             "SOURCES_REPEATABLE_NOT_CERTIFIED"
         ),
