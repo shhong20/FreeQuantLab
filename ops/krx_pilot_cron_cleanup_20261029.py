@@ -13,9 +13,9 @@ from zoneinfo import ZoneInfo
 
 TAG="FREEQUANTLAB_KRX_JOINT_PILOT_20261029"
 ROOT="/home/hong/apps/FreeQuantLab/state/intraday_research/krx_joint_pilot_20261029_r1"
-RUN="/home/hong/apps/FreeQuantLab-krx-pilot-20261029/ops/krx_joint_pilot_20261029.sh"
-CLOSE="/home/hong/apps/FreeQuantLab-krx-resume-20261028/ops/krx_joint_pilot_finalize_resumable_20261029.sh"
-CATCH="/home/hong/apps/FreeQuantLab-krx-resume-20261028/ops/krx_pilot_missed_closeout_watch_20261029.sh"
+RUN="/home/hong/apps/FreeQuantLab-krx-failure-20261028/ops/krx_joint_pilot_20261029.sh"
+CLOSE="/home/hong/apps/FreeQuantLab-krx-failure-20261028/ops/krx_joint_pilot_finalize_resumable_20261029.sh"
+CATCH="/home/hong/apps/FreeQuantLab-krx-failure-20261028/ops/krx_pilot_missed_closeout_watch_20261029.sh"
 EXPECTED=(
     f"# {TAG} (one calendar date only; needs running WSL cron)",
     f"43 9 29 10 * /bin/bash {RUN} morning >> {ROOT}/morning.log 2>&1 # {TAG}",

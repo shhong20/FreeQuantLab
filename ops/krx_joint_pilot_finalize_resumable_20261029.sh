@@ -3,7 +3,7 @@
 # No KIS API or broker activity. One finalizer process; immutable result.
 set -uo pipefail
 umask 077
-cd /home/hong/apps/FreeQuantLab-krx-resume-20261028 || exit 2
+cd /home/hong/apps/FreeQuantLab-krx-failure-20261028 || exit 2
 PY=/home/hong/apps/FreeQuantLab/.venv/bin/python
 ROOT=/home/hong/apps/FreeQuantLab/state/intraday_research
 PILOT="$ROOT/krx_joint_pilot_20261029_r1"

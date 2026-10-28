@@ -20,6 +20,7 @@ from .intraday_krx_joint_pilot import PILOT_SESSION, WINDOWS, DEFAULT_ROOT
 from .intraday_krx_joint_evidence import compare
 from .intraday_krx_halt_position_stress import _read_verified
 from .intraday_kis_venues import VenueProbeError
+from .intraday_krx_pilot_failure import read_failure
 
 KST=ZoneInfo("Asia/Seoul")
 EXPECTED_TRIPLETS=4
@@ -34,6 +35,20 @@ def _verify_window(root:Path, window:str, *, recover_audit:bool=False)->tuple[di
     if not source.exists():
         if report.exists():
             basic["status"]="ORPHAN_AUDIT_WITHOUT_RAW"
+        else:
+            try:
+                failure=read_failure(root=root,window=window)
+                if failure is not None:
+                    basic.update({
+                        "status":"MARKET_CAPTURE_FAILED_RECORDED",
+                        "failed_phase":failure["failed_phase"],
+                        "verified_market_responses_before_failure":
+                            failure["observed_market_responses_verified"],
+                        "last_request_symbol":failure["current_request_symbol"],
+                        "last_request_kind":failure["current_request_kind"],
+                    })
+            except (VenueProbeError,OSError,ValueError,KeyError):
+                basic["status"]="EVIDENCE_FAILED_VERIFICATION"
         return basic,None
     if not (source/"manifest.json").exists():
         basic["status"]="INCOMPLETE_RAW_NOT_RECONSTRUCTIBLE"
