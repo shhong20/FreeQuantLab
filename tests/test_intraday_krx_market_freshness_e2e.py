@@ -95,6 +95,14 @@ def test_full_live_style_pilot_offline_only_then_final_SHA_closeout(tmp_path,mon
     assert review["verified_windows"]==1
     assert review["status"]=="PARTIAL_OR_FAILED_RESEARCH_PILOT"
     assert review["window_results"][0]["verified_triplets"]==4
+    morning_audit=json.loads(
+        (root/"2026-10-29_morning_audit"/"joint_comparison.json").read_text())
+    assert morning_audit["sample_triplets_with_all_trade_date_fields"]==4
+    assert morning_audit["sample_triplets_without_trade_date_fields"]==0
+    assert morning_audit["trade_date_independently_certified"] is False
+    assert all(x["tick_business_date_field_on_all_rows"] is True
+               and x["trade_date_independently_certified"] is False
+               for x in morning_audit["per_sample"])
     assert review["window_results"][1]["status"]=="NOT_CAPTURED"
     assert review["window_results"][2]["status"]=="NOT_CAPTURED"
     assert review["historical_strategy_returns"] is None
@@ -133,3 +141,24 @@ def test_stale_minute_candle_and_invalid_clock_cannot_be_accepted():
     raw["output2"][0]["stck_cntg_hour"]="296100"
     with pytest.raises(VenueProbeError,match="Invalid market time"):
         _decode_market(json.dumps(raw).encode(),"minute","005930",received)
+
+def test_real_kis_inquire_ccnl_like_ticks_have_no_business_date_field():
+    received=datetime.fromisoformat("2026-10-29T09:43:50+09:00")
+    body=json.loads(_sample("ticks","005930"))
+    for row in body["output"]:
+        row.pop("stck_bsop_date",None)  # actual observed KIS off-hours schema
+    result=_decode_market(json.dumps(body).encode(),"ticks","005930",received)
+    assert result["provider_business_date_field_on_all_rows"] is False
+    assert result["market_date_independently_certified"] is False
+    assert result["latest_row_label_age_seconds"]==0
+    assert len(result["rows"])==2
+    assert "stck_bsop_date" not in result["rows"][0]
+
+
+def test_mixed_trade_date_claims_do_not_certify_whole_response():
+    received=datetime.fromisoformat("2026-10-29T09:43:50+09:00")
+    body=json.loads(_sample("ticks","005930"))
+    body["output"][0].pop("stck_bsop_date")
+    result=_decode_market(json.dumps(body).encode(),"ticks","005930",received)
+    assert result["provider_business_date_field_on_all_rows"] is False
+    assert result["market_date_independently_certified"] is False
