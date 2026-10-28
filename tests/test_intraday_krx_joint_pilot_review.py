@@ -149,3 +149,19 @@ def test_corrupt_sha_is_not_reported_as_success(tmp_path):
     p.write_bytes(p.read_bytes()+b"tamper")
     result=review.summarize(root=root,now=AFTER,write=False)
     assert result["window_results"][0]["status"]=="EVIDENCE_FAILED_VERIFICATION"
+
+
+def test_late_resume_writes_partial_report_not_invented_market_data(tmp_path):
+    root=tmp_path/"pilot"
+    root.mkdir()
+    report=review.summarize(
+        root=root,now=datetime.fromisoformat("2026-10-30T06:00:00+09:00"),
+        write=True)
+    assert report["closeout_late_after_original_day"] is True
+    assert report["verified_windows"]==0
+    assert report["status"]=="PARTIAL_OR_FAILED_RESEARCH_PILOT"
+    assert all(r["status"]=="NOT_CAPTURED" for r in report["window_results"])
+    assert report["historical_strategy_returns"] is None
+    saved=root/"2026-10-29_final_review"
+    assert sha256((saved/"final_review.json").read_bytes()).hexdigest()==(
+        saved/"final_review.sha256").read_text().strip()

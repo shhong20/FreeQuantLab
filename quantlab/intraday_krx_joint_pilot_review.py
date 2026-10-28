@@ -105,9 +105,12 @@ def summarize(*,root:Path|str=DEFAULT_ROOT,output_dir:Path|str|None=None,
     if clock.tzinfo is None or clock.utcoffset() is None:
         raise VenueProbeError("Aware time required")
     kst=clock.astimezone(KST)
-    if write and (kst.strftime("%Y-%m-%d")!=PILOT_SESSION or
-                  (kst.hour,kst.minute)<(15,35)):
-        raise VenueProbeError("Only final 2026-10-29 market closeout permitted")
+    closing=datetime(2026,10,29,15,35,tzinfo=KST)
+    if write and kst<closing:
+        raise VenueProbeError("Only after the 2026-10-29 market closeout permitted")
+    # After a WSL restart, the only permissible catch-up is an OFFLINE
+    # review of the Oct-29 original sources, never late KIS API recapture.
+    late_closeout=kst.date().isoformat()!=PILOT_SESSION
     path=Path(root).expanduser().resolve()
     if not path.is_dir():
         raise VenueProbeError("KRX pilot root is not present")
@@ -136,6 +139,8 @@ def summarize(*,root:Path|str=DEFAULT_ROOT,output_dir:Path|str|None=None,
                   else "PARTIAL_OR_FAILED_RESEARCH_PILOT"),
         "session":session,
         "reviewed_at_kst":kst.isoformat(),
+        "closeout_late_after_original_day":late_closeout,
+        "late_recovery_reads_only_original_market_data":True,
         "verified_windows":good,
         "missing_or_invalid_windows":3-good,
         "expected_windows":3,
