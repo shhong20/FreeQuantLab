@@ -18,6 +18,7 @@ import shutil
 import statistics
 import tempfile
 import time
+from typing import Callable
 from zoneinfo import ZoneInfo
 
 import requests
@@ -87,7 +88,8 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
 
 def collect(*,out_dir:str|Path,key:str,secret:str,token:str,
             count:int=2,interval:float=1.,clock=lambda:datetime.now(timezone.utc),
-            sleeper=time.sleep,getter=requests.get) -> dict:
+            sleeper=time.sleep,getter=requests.get,
+            on_observation:Callable[[str,int,str,str],None]|None=None) -> dict:
     root=Path(out_dir).expanduser().resolve()
     if root.exists():
         raise VenueProbeError("Refuse overwrite immutable KRX joint evidence")
@@ -113,6 +115,8 @@ def collect(*,out_dir:str|Path,key:str,secret:str,token:str,
                             "FID_PW_DATA_INCU_YN":"Y",
                             "FID_ETC_CLS_CODE":"",
                         })
+                    if on_observation is not None:
+                        on_observation("STARTED",i,sy,kind)
                     raw=_get(url,params=params,key=key,secret=secret,
                              token=token,tr_id=tr_id,getter=getter)
                     end=_now_utc(clock)
@@ -124,6 +128,8 @@ def collect(*,out_dir:str|Path,key:str,secret:str,token:str,
                     (staging/name).write_bytes(raw)
                     norm=(json.dumps(normalized,sort_keys=True,ensure_ascii=False)+"\n").encode()
                     (staging/f"normalized-{pair}.json").write_bytes(norm)
+                    if on_observation is not None:
+                        on_observation("VERIFIED",i,sy,kind)
                     manifest.append({
                         "sample_index":i,"symbol":sy,"kind":kind,
                         "raw_file":name,"raw_sha256":sha256(raw).hexdigest(),

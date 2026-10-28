@@ -40,7 +40,7 @@ def test_no_cleanup_early_other_year_or_modified_cron():
 
 def test_finalizer_points_to_verified_dynamic_cost_research_script():
     assert module.CLOSE.endswith("/ops/krx_joint_pilot_finalize_resumable_20261029.sh")
-    assert module.CLOSE.startswith("/home/hong/apps/FreeQuantLab-krx-resume-20261028/")
+    assert module.CLOSE.startswith("/home/hong/apps/FreeQuantLab-krx-failure-20261028/")
 
 
 def test_missed_closeout_may_cleanup_next_day_or_year_but_no_unrelated_records():
@@ -48,3 +48,9 @@ def test_missed_closeout_may_cleanup_next_day_or_year_but_no_unrelated_records()
     for when in ("2026-10-30T00:00:00+09:00","2027-10-29T15:50:00+09:00"):
         result=module.remove_pilot_entries(old,datetime.fromisoformat(when))
         assert result=="0 3 * * * /bin/echo unrelated\n"
+
+def test_all_five_pilot_jobs_use_failure_provenance_research_worktree():
+    expected="/home/hong/apps/FreeQuantLab-krx-failure-20261028/"
+    commands=[row for row in module.EXPECTED if row[0].isdigit()]
+    assert len(commands)==5
+    assert all(expected in row for row in commands)

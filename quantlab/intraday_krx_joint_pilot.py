@@ -23,6 +23,7 @@ from .data import _kis_token
 from .intraday_krx_halt_position_stress import _read_verified
 from .intraday_krx_joint_evidence import collect, compare, SYMBOLS
 from .intraday_kis_venues import VenueProbeError
+from .intraday_krx_pilot_failure import read_failure, write_failure
 
 KST=ZoneInfo("Asia/Seoul")
 PILOT_SESSION="2026-10-29"
@@ -72,6 +73,13 @@ def _get_result(root:Path,session:str,window:str)->dict:
                 "sample_triplets":data["sample_triplets"],
                 "same_minute_ticks":data["matched_tick_minute_row_count"],
                 "broker_orders":0}
+    failure=read_failure(root=root,window=window)
+    if failure is not None and not capture.exists():
+        return {"status":"FAILED_CAPTURE_RECORDED","session":session,
+                "window":window,"failed_phase":failure["failed_phase"],
+                "observed_market_responses_verified":
+                    failure["observed_market_responses_verified"],
+                "broker_orders":0}
     if capture.exists() and not (capture/"manifest.json").exists():
         raise VenueProbeError("Incomplete original KRX capture must be isolated")
     if capture.exists():
@@ -101,21 +109,49 @@ def execute(*,session:str,window:str,
         prior=_get_result(dest,session,window)
         if prior["status"]=="ALREADY_AUDITED":
             return prior
+        if prior["status"]=="FAILED_CAPTURE_RECORDED":
+            raise VenueProbeError("Prior market capture failed; do not retry")
         source=dest/f"{session}_{window}_raw"
         audited=dest/f"{session}_{window}_audit"
-        if not prior["capture_exists"]:
-            # No token issuance before all session/window and output checks.
-            token=token_supplier()
-            if not isinstance(token,str) or not token.strip():
-                raise VenueProbeError("No reusable KIS authentication available")
-            collector(out_dir=source,key=os.getenv("KIS_APP_KEY",""),
-                      secret=os.getenv("KIS_APP_SECRET",""),token=token,
-                      count=SAMPLES_PER_STOCK)
-        # If a source exists from a prior run, re-audit without re-capturing.
-        value=auditor(source_dir=source,out_dir=audited)
-        if (value.get("status")!="KRX_NEAR_TIME_THREE_SOURCE_CONSISTENCY_NOT_FILL_VALIDATION" or
-            value.get("broker_orders")!=0):
-            raise VenueProbeError("Pilot consistency proof not established")
+        phase="AUTH"
+        request={"round":None,"symbol":None,"kind":None}
+        verified_count=0
+
+        def on_observation(state:str,index:int,symbol:str,kind:str)->None:
+            nonlocal verified_count
+            if (state not in ("STARTED","VERIFIED") or
+                type(index)!=int or index not in (0,1) or
+                symbol not in SYMBOLS or kind not in ("book","ticks","minute")):
+                raise VenueProbeError("Invalid pilot market request status")
+            request.update({"round":index,"symbol":symbol,"kind":kind})
+            if state=="VERIFIED":
+                verified_count+=1
+                if verified_count>12:
+                    raise VenueProbeError("Unexpected pilot market response count")
+
+        try:
+            if not prior["capture_exists"]:
+                token=token_supplier()
+                if not isinstance(token,str) or not token.strip():
+                    raise VenueProbeError("No reusable KIS authentication available")
+                phase="MARKET_READ"
+                collector(out_dir=source,key=os.getenv("KIS_APP_KEY",""),
+                          secret=os.getenv("KIS_APP_SECRET",""),token=token,
+                          count=SAMPLES_PER_STOCK,on_observation=on_observation)
+            phase="AUDIT"
+            value=auditor(source_dir=source,out_dir=audited)
+            if (value.get("status")!="KRX_NEAR_TIME_THREE_SOURCE_CONSISTENCY_NOT_FILL_VALIDATION" or
+                value.get("broker_orders")!=0):
+                raise VenueProbeError("Pilot consistency proof not established")
+        except Exception:
+            # No exception string, HTTP body or bearer is written.
+            if read_failure(root=dest,window=window) is None:
+                write_failure(root=dest,window=window,phase=phase,
+                              observed_count=verified_count,
+                              current_kind=request["kind"],
+                              current_symbol=request["symbol"],
+                              current_round=request["round"],now=clock())
+            raise
         return {"status":"AUDITED_RESEARCH_ONLY","session":session,"window":window,
                 "sample_triplets":value["sample_triplets"],
                 "same_minute_ticks":value["matched_tick_minute_row_count"],
@@ -188,8 +224,8 @@ def main(argv:list[str]|None=None)->int:
                                    args.session,args.window)
         print(json.dumps(result,ensure_ascii=False,sort_keys=True))
         return 0
-    except (VenueProbeError,ValueError,TypeError,KeyError,OSError):
-        # Never expose OAuth credentials, response bodies or raw KIS market data.
+    except Exception:
+        # Never print exception traces, OAuth credentials, HTTP bodies or raw data.
         print(json.dumps({"status":"FAIL_CLOSED_NO_MARKET_DATA_CERTIFIED",
                           "broker_orders":0,
                           "credentials_exposed":False}))
