@@ -14,21 +14,25 @@ from zoneinfo import ZoneInfo
 TAG="FREEQUANTLAB_KRX_JOINT_PILOT_20261029"
 ROOT="/home/hong/apps/FreeQuantLab/state/intraday_research/krx_joint_pilot_20261029_r1"
 RUN="/home/hong/apps/FreeQuantLab-krx-pilot-20261029/ops/krx_joint_pilot_20261029.sh"
-CLOSE="/home/hong/apps/FreeQuantLab-krx-cost-20261028/ops/krx_joint_pilot_finalize_20261029_cost.sh"
+CLOSE="/home/hong/apps/FreeQuantLab-krx-resume-20261028/ops/krx_joint_pilot_finalize_resumable_20261029.sh"
+CATCH="/home/hong/apps/FreeQuantLab-krx-resume-20261028/ops/krx_pilot_missed_closeout_watch_20261029.sh"
 EXPECTED=(
     f"# {TAG} (one calendar date only; needs running WSL cron)",
     f"43 9 29 10 * /bin/bash {RUN} morning >> {ROOT}/morning.log 2>&1 # {TAG}",
     f"35 12 29 10 * /bin/bash {RUN} midday >> {ROOT}/midday.log 2>&1 # {TAG}",
     f"35 14 29 10 * /bin/bash {RUN} afternoon >> {ROOT}/afternoon.log 2>&1 # {TAG}",
     f"45 15 29 10 * /bin/bash {CLOSE} >> {ROOT}/finalize.log 2>&1 # {TAG}",
+    f"0 * * * * /bin/bash {CATCH} >> {ROOT}/catchup.log 2>&1 # {TAG}",
 )
 
 
 def remove_pilot_entries(cron:str,now:datetime) -> str:
     local=now.astimezone(ZoneInfo("Asia/Seoul"))
-    if (local.strftime("%Y-%m-%d")!="2026-10-29" or
-        (local.hour,local.minute)<(15,45)):
+    boundary=datetime(2026,10,29,15,45,tzinfo=ZoneInfo("Asia/Seoul"))
+    if local<boundary:
         raise ValueError("KRX pilot cleanup is allowed only after 2026-10-29 15:45 KST")
+    # Also permit *later* catch-up after suspended WSL resumes. Exact
+    # cron-entry matching prevents removing any unrelated scheduled job.
     lines=cron.splitlines()
     marked=[line for line in lines if TAG in line]
     if len(marked)!=len(EXPECTED) or set(marked)!=set(EXPECTED):

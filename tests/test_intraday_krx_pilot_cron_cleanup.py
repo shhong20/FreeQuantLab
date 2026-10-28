@@ -16,7 +16,7 @@ spec.loader.exec_module(module)
 NOW=datetime.fromisoformat("2026-10-29T15:46:00+09:00")
 
 
-def test_only_exact_four_marked_cron_records_removed():
+def test_only_exact_five_marked_cron_jobs_removed():
     existing="15 8 * * * /usr/bin/echo unrelated\n" + "\n".join(module.EXPECTED)+"\n"
     clean=module.remove_pilot_entries(existing,NOW)
     assert clean=="15 8 * * * /usr/bin/echo unrelated\n"
@@ -27,7 +27,7 @@ def test_no_cleanup_early_other_year_or_modified_cron():
     existing="\n".join(module.EXPECTED)+"\n"
     for invalid_time in ("2026-10-29T09:43:00+09:00",
                          "2026-10-28T16:00:00+09:00",
-                         "2027-10-29T15:50:00+09:00"):
+                         "2026-10-29T15:44:00+09:00"):
         with pytest.raises(ValueError,match="only after"):
             module.remove_pilot_entries(
                 existing,datetime.fromisoformat(invalid_time))
@@ -39,5 +39,12 @@ def test_no_cleanup_early_other_year_or_modified_cron():
 
 
 def test_finalizer_points_to_verified_dynamic_cost_research_script():
-    assert module.CLOSE.endswith("/ops/krx_joint_pilot_finalize_20261029_cost.sh")
-    assert module.CLOSE.startswith("/home/hong/apps/FreeQuantLab-krx-cost-20261028/")
+    assert module.CLOSE.endswith("/ops/krx_joint_pilot_finalize_resumable_20261029.sh")
+    assert module.CLOSE.startswith("/home/hong/apps/FreeQuantLab-krx-resume-20261028/")
+
+
+def test_missed_closeout_may_cleanup_next_day_or_year_but_no_unrelated_records():
+    old="0 3 * * * /bin/echo unrelated\n" + "\n".join(module.EXPECTED)+"\n"
+    for when in ("2026-10-30T00:00:00+09:00","2027-10-29T15:50:00+09:00"):
+        result=module.remove_pilot_entries(old,datetime.fromisoformat(when))
+        assert result=="0 3 * * * /bin/echo unrelated\n"
