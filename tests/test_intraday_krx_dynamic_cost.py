@@ -213,6 +213,12 @@ def test_verified_pilot_books_are_costed_only_after_closeout(tmp_path,monkeypatc
         "expected_windows":3,
         "verified_windows":3,
         "missing_or_invalid_windows":0,
+        "source_verified_windows_not_cross_source_price_certification":True,
+        "cross_source_price_consistency_observed_only":
+            "ALL_OBSERVED_MATCHES_WITHIN_CANDLE_RANGE_NOT_CERTIFIED",
+        "trade_day_independently_certified":False,
+        "minute_label_start_end_semantics_independently_certified":False,
+        "safe_to_calibrate_historical_strategy_fills":False,
         "window_results":rows,
     })
     monkeypatch.setattr(module,"_verify_window",lambda r,w,**kwargs:
@@ -225,6 +231,9 @@ def test_verified_pilot_books_are_costed_only_after_closeout(tmp_path,monkeypatc
                for w in data["by_sample_group"] for sy in SYMBOLS)
     assert data["actual_broker_fill_records"]==0
     assert data["strategy_returns"] is None
+    market_source=next(x for x in data["sources"] if x["kind"]=="joint_pilot")
+    assert market_source["trade_day_independently_certified"] is False
+    assert market_source["market_observations_are_not_historical_fill_calibration"]
     # Mutating raw quote bytes after finalization invalidates the downstream cost.
     path=root/"2026-10-29_morning_raw"/"raw-000-005930-book.json"
     path.write_bytes(path.read_bytes()+b"t")

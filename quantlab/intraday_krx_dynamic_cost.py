@@ -95,6 +95,11 @@ def _load_pilot(root:Path)->tuple[list[dict],dict]:
         len(indexed)!=3 or
         {x.get("window") for x in indexed}!=set(WINDOWS)):
         raise VenueProbeError("Missing three window outcomes")
+    if (result.get("source_verified_windows_not_cross_source_price_certification") is not True or
+        result.get("trade_day_independently_certified") is not False or
+        result.get("minute_label_start_end_semantics_independently_certified") is not False or
+        result.get("safe_to_calibrate_historical_strategy_fills") is not False):
+        raise VenueProbeError("KRX source integrity must not certify 3-source fills")
     observations=[]
     for row in indexed:
         window=row["window"]
@@ -149,6 +154,11 @@ def _load_pilot(root:Path)->tuple[list[dict],dict]:
         "verified_windows":result["verified_windows"],
         "missing_or_invalid_windows":result["missing_or_invalid_windows"],
         "all_market_sources_verified":result["verified_windows"]==3,
+        "tick_minute_observed_price_consistency":
+            result["cross_source_price_consistency_observed_only"],
+        "trade_day_independently_certified":False,
+        "minute_label_start_end_semantics_independently_certified":False,
+        "market_observations_are_not_historical_fill_calibration":True,
     }
 
 
