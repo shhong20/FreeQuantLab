@@ -279,9 +279,11 @@ def main(argv:list[str]|None=None) -> int:
     a=p.parse_args(argv)
     try:
         if a.capture_dir and a.execute:
+            key=os.getenv("KIS_APP_KEY","")
+            secret=os.getenv("KIS_APP_SECRET","")
             token=os.getenv("KIS_ACCESS_TOKEN") or _kis_token()
-            r=collect(out_dir=a.capture_dir,key=os.getenv("KIS_APP_KEY",""),
-                      secret=os.getenv("KIS_APP_SECRET",""),token=token,count=a.count)
+            r=collect(out_dir=a.capture_dir,key=key,
+                      secret=secret,token=token,count=a.count)
             print(json.dumps({"status":r["status"],"market_response_count":len(r["snapshots"])}))
         elif a.source_dir and a.output_dir and not a.execute:
             r=compare(source_dir=a.source_dir,out_dir=a.output_dir)
