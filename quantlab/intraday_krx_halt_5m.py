@@ -26,6 +26,26 @@ from .intraday_kis_venues import VenueProbeError
 # continuous trading followed by 10m call auction is a conservative
 # potential no-continuous-execution window, NOT a validated execution clock.
 REPORTED_KOSPI_CB = {
+    "2026-06-08": {
+        "activation_kst": "09:03:42",
+        "source": "https://www.donga.com/news/article/all/20260608/134067569/2",
+    },
+    "2026-06-23": {
+        "activation_kst": "14:33:43",
+        "source": "https://v.daum.net/v/20260623145100978",
+    },
+    "2026-06-26": {
+        "activation_kst": "12:10:12",
+        "source": "https://www.newspim.com/news/view/20260626000530",
+    },
+    "2026-07-07": {
+        "activation_kst": "13:51:34",
+        "source": "https://kbam.co.kr/insights/circuit-breaker-7-times-2026-kospi-volatility-guide",
+    },
+    "2026-07-13": {
+        "activation_kst": "13:28:32",
+        "source": "https://www.imaeil.com/page/view/2026071312105454937",
+    },
     "2026-07-28": {
         "activation_kst": "10:13:43",
         "source": "https://v.daum.net/v/20260728101810442",
