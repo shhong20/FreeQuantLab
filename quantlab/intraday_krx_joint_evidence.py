@@ -8,7 +8,7 @@ no synchronized snapshot or fill is claimed. Outputs are immutable/SHA pinned.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 import json
 import os
@@ -61,6 +61,7 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
         head=data.get("output1")
         if not isinstance(head,dict):
             raise VenueProbeError("Missing KIS current minute summary")
+    received_kst=received.astimezone(KST)
     parsed=[]
     for row in rows:
         if not isinstance(row,dict):
@@ -76,13 +77,37 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
             raise VenueProbeError("Invalid KIS observed price/volume") from exc
         if any(v<=0 for k,v in nums.items() if k!="cntg_vol") or nums["cntg_vol"]<0:
             raise VenueProbeError("Invalid market price or size")
+        # Recent execution API may omit a business date, but whenever
+        # supplied it must match the current KRX sampling date.
+        if kind=="ticks" and row.get("stck_bsop_date") not in (
+            None, "", received_kst.strftime("%Y%m%d")):
+            raise VenueProbeError("Other-date exchange trade cannot be compared")
         if kind=="minute":
-            if row.get("stck_bsop_date")!=received.astimezone(KST).strftime("%Y%m%d"):
+            if row.get("stck_bsop_date")!=received_kst.strftime("%Y%m%d"):
                 raise VenueProbeError("Other-date minute cannot be compared")
             if not (nums["stck_lwpr"]<=min(nums["stck_oprc"],nums["stck_prpr"])
                     <=max(nums["stck_oprc"],nums["stck_prpr"])<=nums["stck_hgpr"]):
                 raise VenueProbeError("Invalid 1m OHLC")
         parsed.append({"time_label":clock,**nums})
+    # SHA-verified data alone can be a stale quotation. Restrict the most
+    # recent ticker/1m label to this collection's market-day clock.
+    # The 1-minute label is only a freshness guard; its start/end meaning
+    # is still not established, so allow 2 minutes of clock ambiguity.
+    labels=[]
+    for row in parsed:
+        label=row["time_label"]
+        try:
+            labels.append(received_kst.replace(
+                hour=int(label[:2]),minute=int(label[2:4]),
+                second=int(label[4:6]),microsecond=0))
+        except ValueError as exc:
+            raise VenueProbeError("Impossible KRX observed clock") from exc
+    latest=max(labels)
+    age=(received_kst-latest).total_seconds()
+    stale_limit=120 if kind=="ticks" else 300
+    future_limit=3 if kind=="ticks" else 120
+    if not -future_limit<=age<=stale_limit:
+        raise VenueProbeError("Stale or future KRX market evidence not suitable for live comparison")
     return {"kind":kind,"symbol":sy,"rows":parsed,"source_is_market_data_not_account_fills":True}
 
 
