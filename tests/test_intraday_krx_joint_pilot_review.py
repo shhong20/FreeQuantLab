@@ -78,6 +78,12 @@ def test_all_windows_independently_verified_and_read_only(monkeypatch,tmp_path):
     assert result["verified_windows"]==3
     assert result["market_ticks_matching_HHMM_minute_labels"]==90
     assert result["market_ticks_within_matched_minute_range"]==87
+    assert result["cross_source_price_consistency_observed_only"]==(
+        "OBSERVED_TICK_PRICES_OUTSIDE_MINUTE_RANGE")
+    assert result["observed_tick_minute_price_agreement_fraction"]==87/90
+    assert result["source_verified_windows_not_cross_source_price_certification"]
+    assert result["safe_to_calibrate_historical_strategy_fills"] is False
+    assert result["trade_day_independently_certified"] is False
     assert len(called)==3
     assert result["broker_orders"]==0
     assert result["historical_strategy_returns"] is None
@@ -165,3 +171,33 @@ def test_late_resume_writes_partial_report_not_invented_market_data(tmp_path):
     saved=root/"2026-10-29_final_review"
     assert sha256((saved/"final_review.json").read_bytes()).hexdigest()==(
         saved/"final_review.sha256").read_text().strip()
+
+def test_zero_matching_trade_minute_labels_not_called_consistent(monkeypatch,tmp_path):
+    root=tmp_path/"pilot"
+    original=make_window(root,"morning")
+    original["matched_tick_minute_row_count"]=0
+    original["matched_tick_price_within_candle_range_count"]=0
+    save(root/"2026-10-29_morning_audit","joint_comparison",original)
+    monkeypatch.setattr(review,"compare",lambda **_:original)
+    report=review.summarize(root=root,now=AFTER,write=False)
+    assert report["verified_windows"]==1
+    assert report["market_ticks_matching_HHMM_minute_labels"]==0
+    assert report["cross_source_price_consistency_observed_only"]==(
+        "NO_COMMON_TICK_MINUTE_LABELS")
+    assert report["observed_tick_minute_price_agreement_fraction"] is None
+    assert report["window_results"][0]["status"]=="VERIFIED_RESEARCH_ONLY"
+    assert report["window_results"][0]["tick_minute_price_consistency"]==(
+        "NO_COMMON_TICK_MINUTE_LABELS")
+    assert report["backtesting_approval"] is False
+
+
+def test_in_range_count_larger_than_matched_rejected_even_with_sha(tmp_path,monkeypatch):
+    root=tmp_path/"pilot"
+    original=make_window(root,"morning")
+    original["matched_tick_minute_row_count"]=3
+    original["matched_tick_price_within_candle_range_count"]=4
+    save(root/"2026-10-29_morning_audit","joint_comparison",original)
+    monkeypatch.setattr(review,"compare",lambda **_:original)
+    result=review.summarize(root=root,now=AFTER,write=False)
+    assert result["verified_windows"]==0
+    assert result["window_results"][0]["status"]=="EVIDENCE_FAILED_VERIFICATION"

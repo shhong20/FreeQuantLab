@@ -25,6 +25,16 @@ from .intraday_krx_pilot_failure import read_failure
 KST=ZoneInfo("Asia/Seoul")
 EXPECTED_TRIPLETS=4
 
+def _price_consistency(matched:int,within:int)->str:
+    """Market price diagnostics, not independent trade-day or fill proof."""
+    if (type(matched)!=int or type(within)!=int or
+        not 0<=within<=matched):
+        raise VenueProbeError("Invalid KRX tick/minute consistency totals")
+    if matched==0:return "NO_COMMON_TICK_MINUTE_LABELS"
+    if within!=matched:return "OBSERVED_TICK_PRICES_OUTSIDE_MINUTE_RANGE"
+    return "ALL_OBSERVED_MATCHES_WITHIN_CANDLE_RANGE_NOT_CERTIFIED"
+
+
 
 def _verify_window(root:Path, window:str, *, recover_audit:bool=False)->tuple[dict,dict|None]:
     source=root/f"{PILOT_SESSION}_{window}_raw"
@@ -95,8 +105,18 @@ def _verify_window(root:Path, window:str, *, recover_audit:bool=False)->tuple[di
                 not start<=last.hour*60+last.minute<stop or
                 not 0<=(last-first).total_seconds()<=30):
                 raise VenueProbeError("Pilot capture not in its true KRX time window")
+        matched=recorded["matched_tick_minute_row_count"]
+        within=recorded["matched_tick_price_within_candle_range_count"]
+        quality=_price_consistency(matched,within)
         basic.update({
-            "status":"VERIFIED_RESEARCH_ONLY",
+            "status":"VERIFIED_RESEARCH_ONLY",  # SHA/source integrity only
+            "tick_minute_price_consistency":quality,
+            "observed_tick_minute_price_agreement_fraction":(
+                within/matched if matched else None),
+            "tick_business_date_missing_triplets":recorded.get(
+                "sample_triplets_without_trade_date_fields"),
+            "market_trade_date_independently_certified":False,
+            "minute_label_start_end_semantics_confirmed":False,
             "verified_triplets":len(samples),
             "matched_ticks":recorded["matched_tick_minute_row_count"],
             "price_within_candle_range":
@@ -137,6 +157,9 @@ def summarize(*,root:Path|str=DEFAULT_ROOT,output_dir:Path|str|None=None,
         if verified is not None:
             observations.extend(verified["per_sample"])
     good=sum(row["status"]=="VERIFIED_RESEARCH_ONLY" for row in rows)
+    matched_total=sum(row["matched_ticks"] for row in rows)
+    within_total=sum(row["price_within_candle_range"] for row in rows)
+    price_quality=_price_consistency(matched_total,within_total)
     by_symbol={}
     for symbol in ("005930","000660"):
         samples=[s for s in observations if s["symbol"]==symbol]
@@ -161,9 +184,16 @@ def summarize(*,root:Path|str=DEFAULT_ROOT,output_dir:Path|str|None=None,
         "expected_windows":3,
         "expected_market_data_responses":36,
         "verified_triplets":sum(row["verified_triplets"] for row in rows),
-        "market_ticks_matching_HHMM_minute_labels":sum(row["matched_ticks"] for row in rows),
-        "market_ticks_within_matched_minute_range":sum(
-            row["price_within_candle_range"] for row in rows),
+        "market_ticks_matching_HHMM_minute_labels":matched_total,
+        "market_ticks_within_matched_minute_range":within_total,
+        "cross_source_price_consistency_observed_only":price_quality,
+        "observed_tick_minute_price_agreement_fraction":(
+            within_total/matched_total if matched_total else None),
+        "no_common_time_labels_is_not_price_consistency_success":True,
+        "source_verified_windows_not_cross_source_price_certification":True,
+        "trade_day_independently_certified":False,
+        "minute_label_start_end_semantics_independently_certified":False,
+        "safe_to_calibrate_historical_strategy_fills":False,
         "window_results":rows,"by_symbol":by_symbol,
         "data_collection_failure_cause_not_inferred":True,
         "missed_live_snapshots_cannot_be_backfilled":True,
