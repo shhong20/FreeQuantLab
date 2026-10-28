@@ -10,7 +10,6 @@ import io
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -158,18 +157,22 @@ def naver_daily(symbol: str, bars: int = 1000, *, now: datetime | None = None) -
     return normalize(pd.DataFrame(rows), today=today.isoformat()).tail(bars).reset_index(drop=True)
 
 
-@lru_cache(maxsize=1)
 def _kis_token() -> str:
+    """Reuse KIS's 24h access token across research processes and restarts.
+
+    All read-only KIS callers share the same secure, time-bounded cache.
+    The former process-only lru_cache could retain an expired token forever.
+    """
     key, secret = os.getenv("KIS_APP_KEY"), os.getenv("KIS_APP_SECRET")
     if not key or not secret:
         raise DataError("KIS_APP_KEY and KIS_APP_SECRET required in environment")
-    base = "https://openapi.koreainvestment.com:9443"
+    # Lazy to avoid a module-level import cycle: market venues use data.py.
+    from .kis_token_cache import get_token
+    from .intraday_kis_venues import VenueProbeError
     try:
-        auth = requests.post(base + "/oauth2/tokenP", json={"grant_type": "client_credentials", "appkey": key, "appsecret": secret}, timeout=15)
-        auth.raise_for_status()
-        return auth.json()["access_token"]
-    except (requests.RequestException, ValueError, KeyError) as exc:
-        raise DataError("KIS OAuth token request failed") from exc
+        return get_token(key=key, secret=secret)
+    except VenueProbeError:
+        raise DataError("KIS OAuth cache or issuance unavailable; no retry") from None
 
 
 def kis_daily(symbol: str, bars: int = 800, *, now: datetime | None = None) -> pd.DataFrame:
