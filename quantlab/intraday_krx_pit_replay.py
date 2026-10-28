@@ -215,8 +215,11 @@ def _replay_one(name: str, days: list[dict], *,
                       "first_unknown_at":bars[-1]["timestamp"],
                       "entry":position,"realized_pnl":None}
             position=None
-        if not gap_seen and all(p is not None for p in prices[:6]):
-            for n in LOOKBACK:
+        # A later halt/gap must not retrospectively delete opening volume
+        # already known before it occurred. That is a future-information
+        # leak into tomorrow's RVOL baseline. Track each N independently.
+        for n in LOOKBACK:
+            if all(prices[j] is not None for j in range(n)):
                 history[n].append(sum(prices[j]["volume"] for j in range(n)))
         by_window[window]["sessions_seen"] += 1
         by_window[window]["cb_day_observed_ex_post"] += int(ev is not None)
