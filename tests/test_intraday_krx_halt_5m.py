@@ -255,3 +255,22 @@ def test_readiness_never_removes_breaker_days_to_claim_walkforward(
     assert readiness["clean_session_shortfall_to_60"]==59
     assert readiness["must_not_drop_halt_days_to_inflate_test_performance"] is True
     assert readiness["legacy_strategy_evaluate_permitted"] is False
+
+@pytest.mark.parametrize("day,activation", [
+    ("2026-06-08","09:03:42"),
+    ("2026-06-23","14:33:43"),
+    ("2026-06-26","12:10:12"),
+    ("2026-07-07","13:51:34"),
+    ("2026-07-13","13:28:32"),
+])
+def test_previously_missing_reported_market_cb_is_hard_session_gate(
+    day,activation,tmp_path,monkeypatch
+):
+    root=tmp_path/"raw"
+    inject(monkeypatch,root,{day:mock_rows(session=day)})
+    result=mod.analyze_day(source_root=root,symbol=TICKER,session=day)
+    assert result["reported_cb"]["activation_kst"].endswith(activation+"+09:00")
+    assert result["day_disposition"]=="ENTIRE_DAY_STRATEGY_PNL_BLOCKED_MARKET_HALT_RISK"
+    assert result["backtest_pnl_enabled"] is False
+    assert all(not row["continuous_order_execution_allowed"]
+               for row in result["slots"])
