@@ -33,6 +33,11 @@ KST = ZoneInfo("Asia/Seoul")
 MAX_SESSION_COUNT = 120
 BATCH_DAYS = 5
 SCHEMA = "KIS_KRX_J_BOUNDED_60SESSION_V1"
+# KRX explicitly closed on these two 2026 weekdays. exchange_calendars 4.13.2
+# incorrectly emits both as sessions; excluding them is mandatory before
+# generating a request plan or trusting a saved plan for historical capture.
+KRX_2026_ANNOUNCED_CLOSURES = frozenset(("2026-06-03", "2026-07-17"))
+KRX_2026_CLOSURE_NOTICE = "https://www.newspim.com/news/view/20260520000433"
 
 
 def _json(value: dict) -> bytes:
@@ -62,7 +67,8 @@ def _calendar_days(*, end_session: str, session_count: int,
         days=calendar.sessions_in_range(left,end.isoformat())
     except (ValueError,OverflowError) as exc:
         raise VenueProbeError("XKRX exchange calendar does not cover dates") from exc
-    values=tuple(str(d.date()) for d in days)
+    values=tuple(str(d.date()) for d in days
+                 if str(d.date()) not in KRX_2026_ANNOUNCED_CLOSURES)
     if not values or values[-1]!=end_session or len(values)<session_count:
         raise VenueProbeError("Requested end is not a verified XKRX calendar session")
     return values[-session_count:]
@@ -114,6 +120,8 @@ def create(*, plan_dir: str | Path, source_root: str | Path,
         "pending_stock_day_snapshots":len(days)*len(symbols)-len(existing),
         "calendar_name":"XKRX",
         "calendar_package_version":xcals.__version__,
+        "krx_2026_announced_closure_dates":sorted(KRX_2026_ANNOUNCED_CLOSURES),
+        "krx_2026_closure_notice_url":KRX_2026_CLOSURE_NOTICE,
         "calendar_is_schedule_candidate_not_official_trade_confirmation":True,
         "unexpected_holiday_or_provider_no_data_is_failure_not_zero_trading":True,
         "historical_source_timestamp_scope_verified":False,
@@ -140,6 +148,8 @@ def load(plan_dir: str | Path) -> dict:
             raise VenueProbeError("Historical plan contract mismatch")
         symbols=tuple(plan["symbols"])
         days=tuple(plan["sessions"])
+        if any(day in KRX_2026_ANNOUNCED_CLOSURES for day in days):
+            raise VenueProbeError("KRX announced closure in historical plan")
         if (not 1<=len(symbols)<=3 or len(set(symbols))!=len(symbols)
                 or any(not isinstance(x,str) or not re.fullmatch(r"[0-9]{6}",x)
                        for x in symbols)
@@ -162,6 +172,10 @@ def load(plan_dir: str | Path) -> dict:
                 raise VenueProbeError("Historical batch tasks mismatch")
         if plan.get("batch_days_max")!=5 or plan.get("target_sessions_per_symbol")!=len(days):
             raise VenueProbeError("Historical API bounds changed")
+        if any(day in KRX_2026_ANNOUNCED_CLOSURES for day in days):
+            raise VenueProbeError("KRX announced closure in historical plan")
+        if days != _calendar_days(end_session=days[-1],session_count=len(days)):
+            raise VenueProbeError("Historical plan sessions no longer match KRX calendar")
         root=Path(plan["source_root"]).expanduser().resolve()
         for row in plan["existing_sources_at_plan_time"]:
             if not isinstance(row,dict) or row.get("symbol") not in symbols or row.get("session") not in days:

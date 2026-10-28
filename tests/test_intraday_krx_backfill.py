@@ -232,3 +232,29 @@ def test_all_batch_local_fake_network_can_complete_and_resume_without_requery(
     assert after["remaining_before"]==0
     assert after["status"]=="ALL_BATCHES_VERIFIED_COMPLETED"
     assert len(get_calls)==4
+
+
+def test_100_sessions_excludes_real_june_election_and_july_constitution_closures(tmp_path):
+    folder, _root, plan = build_plan(tmp_path, count=100)
+    assert len(plan["sessions"]) == 100
+    assert plan["sessions"][0] == "2026-05-28"
+    assert plan["sessions"][-1] == "2026-10-23"
+    assert "2026-06-03" not in plan["sessions"]
+    assert "2026-07-17" not in plan["sessions"]
+    assert plan["krx_2026_announced_closure_dates"] == [
+        "2026-06-03", "2026-07-17"
+    ]
+    assert len(plan["batches"]) == 20
+    assert backfill.load(folder) == plan
+
+
+def test_old_100_day_plan_with_known_market_closures_is_rejected(tmp_path):
+    folder, _root, plan = build_plan(tmp_path, count=100)
+    # Simulates a previously SHA-verified but calendar-invalid plan: it is
+    # fail-closed even after someone recomputes its checksums.
+    plan["sessions"][2] = "2026-06-03"
+    blob = backfill._json(plan)
+    (folder / "plan.json").write_bytes(blob)
+    (folder / "plan.sha256").write_text(sha256(blob).hexdigest()+"\n")
+    with pytest.raises(VenueProbeError, match="announced closure"):
+        backfill.load(folder)
