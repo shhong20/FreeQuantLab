@@ -168,3 +168,36 @@ def test_tampered_pinned_stress_blocks_e2e(tmp_path):
     with pytest.raises(VenueProbeError,match="stress mismatch"):
         replay(source_root=raw,stress_root=stress,output_dir=tmp_path/"out")
     assert not (tmp_path/"out").exists()
+
+def test_afternoon_halt_does_not_erase_observed_opening_rvol_history():
+    days=[]
+    first=date(2026,8,3)
+    for n in range(11):
+        d=(first+timedelta(days=n)).isoformat()
+        row=day(session=d,halt="13:51:34" if n==4 else None)
+        if n==10:
+            for slot in row["slots"][:6]:
+                slot["ohlcv"]["volume"]=25000
+        days.append(row)
+    r=run(days,name="orb_5m_rvol1.5")
+    # Day 11's ORB must see all ten earlier openings, including the
+    # valid 09:00 bar on day 5 whose afternoon halt was only known later.
+    entries=[e for e in r["events"] if e["event"]=="HYPOTHETICAL_NEXT_OPEN_ENTRY"]
+    assert any(e["session"]==days[-1]["session"] for e in entries)
+    assert r["window_counts"]["test"]["completed_bar_signals"]>=1
+
+
+def test_later_missing_minute_preserves_short_opening_history():
+    days=[]
+    first=date(2026,8,3)
+    for n in range(11):
+        d=(first+timedelta(days=n)).isoformat()
+        row=day(session=d,halt=None,gaps=(31,) if n==3 else ())
+        if n==10:
+            for slot in row["slots"][:6]:
+                slot["ohlcv"]["volume"]=25000
+        days.append(row)
+    r=run(days,name="orb_5m_rvol1.5")
+    assert any(e["session"]==days[-1]["session"] and
+               e["event"]=="HYPOTHETICAL_NEXT_OPEN_ENTRY"
+               for e in r["events"])
