@@ -87,6 +87,9 @@ def test_full_offline_joint_comparison_with_receipt_provenance(tmp_path):
     assert report["matched_tick_price_within_candle_range_count"]==4
     assert report["broker_orders"]==0 and report["strategy_returns"] is None
     assert report["KIS_minute_start_end_semantics_confirmed"] is False
+    assert report["sample_triplets_without_trade_date_fields"]==2
+    assert report["sample_triplets_with_all_trade_date_fields"]==0
+    assert report["trade_date_independently_certified"] is False
     assert all(not s["same_instant_L2_tick_minute"] for s in report["per_sample"])
     saved=tmp_path/"output"/"joint_comparison.json"
     assert sha256(saved.read_bytes()).hexdigest()==(

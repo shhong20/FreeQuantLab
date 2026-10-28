@@ -63,6 +63,7 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
             raise VenueProbeError("Missing KIS current minute summary")
     received_kst=received.astimezone(KST)
     parsed=[]
+    tick_date_claim_fields_seen=0
     for row in rows:
         if not isinstance(row,dict):
             raise VenueProbeError("Invalid exchange trade row")
@@ -79,9 +80,12 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
             raise VenueProbeError("Invalid market price or size")
         # Recent execution API may omit a business date, but whenever
         # supplied it must match the current KRX sampling date.
-        if kind=="ticks" and row.get("stck_bsop_date") not in (
-            None, "", received_kst.strftime("%Y%m%d")):
-            raise VenueProbeError("Other-date exchange trade cannot be compared")
+        if kind=="ticks":
+            date_claim=row.get("stck_bsop_date")
+            if date_claim not in (None,""):
+                tick_date_claim_fields_seen+=1
+                if date_claim!=received_kst.strftime("%Y%m%d"):
+                    raise VenueProbeError("Other-date exchange trade cannot be compared")
         if kind=="minute":
             if row.get("stck_bsop_date")!=received_kst.strftime("%Y%m%d"):
                 raise VenueProbeError("Other-date minute cannot be compared")
@@ -108,7 +112,18 @@ def _decode_market(raw:bytes, kind:str, sy:str, received:datetime):
     future_limit=3 if kind=="ticks" else 120
     if not -future_limit<=age<=stale_limit:
         raise VenueProbeError("Stale or future KRX market evidence not suitable for live comparison")
-    return {"kind":kind,"symbol":sy,"rows":parsed,"source_is_market_data_not_account_fills":True}
+    # Actual KIS inquire-ccnl may omit stck_bsop_date completely.
+    # A near-receipt HHMMSS observation is *not* independently dated evidence.
+    # Never synthesize a date from response time and label it provider-proven.
+    date_claim_all=(kind=="minute" or tick_date_claim_fields_seen==len(parsed))
+    return {
+        "kind":kind,"symbol":sy,"rows":parsed,
+        "latest_row_time_label":max(row["time_label"] for row in parsed),
+        "latest_row_label_age_seconds":age,
+        "provider_business_date_field_on_all_rows":date_claim_all,
+        "market_date_independently_certified":False,
+        "source_is_market_data_not_account_fills":True,
+    }
 
 
 def collect(*,out_dir:str|Path,key:str,secret:str,token:str,
@@ -262,6 +277,15 @@ def compare(*,source_dir:str|Path,out_dir:str|Path) -> dict:
                 "book_spread_bps":spread,
                 "tick_rows":len(ticks["rows"]),
                 "minute_rows":len(minute["rows"]),
+                "tick_business_date_field_on_all_rows":ticks[
+                    "provider_business_date_field_on_all_rows"],
+                "minute_business_date_field_on_all_rows":minute[
+                    "provider_business_date_field_on_all_rows"],
+                "trade_date_independently_certified":False,
+                "tick_latest_label_age_seconds":ticks[
+                    "latest_row_label_age_seconds"],
+                "minute_latest_label_age_seconds":minute[
+                    "latest_row_label_age_seconds"],
                 "tick_rows_with_same_HHMM_candle_label":matched,
                 "tick_rows_with_price_in_minute_range":in_range,
                 "tick_minute_diagnostics":tick_at_minute,
@@ -278,6 +302,11 @@ def compare(*,source_dir:str|Path,out_dir:str|Path) -> dict:
         "matched_tick_price_within_candle_range_count":sum(x["tick_rows_with_price_in_minute_range"] for x in comparisons),
         "per_sample":comparisons,
         "market_execution_ticks_not_personal_broker_fills":True,
+        "sample_triplets_with_all_trade_date_fields":sum(
+            int(x["tick_business_date_field_on_all_rows"]) for x in comparisons),
+        "sample_triplets_without_trade_date_fields":sum(
+            int(not x["tick_business_date_field_on_all_rows"]) for x in comparisons),
+        "trade_date_independently_certified":False,
         "current_unfinished_minute_volume_not_verified":True,
         "KIS_minute_start_end_semantics_confirmed":False,
         "order_queue_delay_cancel_and_fill_not_measured":True,
