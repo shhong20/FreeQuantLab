@@ -36,3 +36,8 @@ def test_no_cleanup_early_other_year_or_modified_cron():
     with pytest.raises(ValueError,match="changed"):
         module.remove_pilot_entries(existing+"0 0 * * * /bin/echo "+
                                     module.TAG+"\n",NOW)
+
+
+def test_finalizer_points_to_verified_dynamic_cost_research_script():
+    assert module.CLOSE.endswith("/ops/krx_joint_pilot_finalize_20261029_cost.sh")
+    assert module.CLOSE.startswith("/home/hong/apps/FreeQuantLab-krx-cost-20261028/")
