@@ -1,0 +1,16 @@
+[Unit]
+Description=Pre-observation network and frozen-cohort evidence readiness (KST)
+
+[Timer]
+# Windows warm tasks run 08:40 and 09:05; these check readiness shortly after.
+# Observe no prior day orders; a boot after window only writes a late receipt.
+OnCalendar=*-*-* 08:46:00 Asia/Seoul
+OnCalendar=*-*-* 09:07:00 Asia/Seoul
+OnCalendar=*-*-* 09:12:00 Asia/Seoul
+OnStartupSec=3min
+AccuracySec=30s
+Persistent=true
+Unit=freequant-clean-preopen.service
+
+[Install]
+WantedBy=timers.target
