@@ -44,6 +44,16 @@ if ($null -eq $task) {
     exit 2
 }
 
+# Task Scheduler can normalize a local \HOST\User name to just User.
+# Validate the *resolved SID*, not the displayed account-name spelling.
+$principalSidResolved=$false
+try {
+    $registeredSid=(New-Object System.Security.Principal.NTAccount([string]$task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value
+    $currentSid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $principalSidResolved=($registeredSid -eq $currentSid)
+} catch {
+    $principalSidResolved=$false
+}
 $times=@()
 foreach ($trigger in $task.Triggers) {
     try {
@@ -64,7 +74,7 @@ $valid=(
     ($times -join ",") -eq ($expectedSorted -join ",") -and
     [string]$task.Principal.LogonType -eq "Interactive" -and
     [string]$task.Principal.RunLevel -eq "Limited" -and
-    [string]$task.Principal.UserId -ieq $currentUser -and
+    $principalSidResolved -eq $true -and
     $task.Settings.WakeToRun -eq $false -and
     $task.Settings.StartWhenAvailable -eq $true -and
     $task.Settings.DisallowStartIfOnBatteries -eq $false -and

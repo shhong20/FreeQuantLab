@@ -18,7 +18,7 @@
 - 현재 사용자의 **Interactive / Limited** 토큰으로 실행. 관리자 권한·Windows 암호 수집·서비스 계정 불필요. Ubuntu 시작 요청만 수행.
 - **WakeToRun=false**: Windows를 수면에서 강제로 깨우거나 켜지 않는다. 기존 전원 정책 변경 없음. 배터리 사용 여부와 무관하게 Windows가 깨어 있을 때 실행하도록 설정.
 - 기존 `Remote-MCP-WSL-Autostart` 로그인 작업 및 `FreeQuantLab-WSL-Resume-Recovery` 절전 복귀 작업을 변경하지 않는다.
-- 이미 이름이 같은 작업이 있을 경우 설정을 일일이 대조하고, 일치하지 않으면 **CONFIG_DRIFT** 오류로 종료한다. 덮어쓰지 않는다.
+- 이미 이름이 같은 작업이 있을 경우 설정을 일일이 대조하고, 일치하지 않으면 **CONFIG_DRIFT** 오류로 종료한다. 덮어쓰지 않는다. Windows Task Scheduler는 `HOST\User`를 `User`로 정규화해 저장할 수 있어 실제 주체의 **SID가 현재 계정과 동일한지** 검증하며, 텍스트 이름 비교로 잘못된 drift를 만들지 않는다.
 - 실제 Windows 재부팅/절전 복귀 이벤트의 **E2E 검증은 진행하지 않았다**. 예약·현재 구성 확인만 성공한 상태와 혼동하지 않는다.
 
 PowerShell 5.1에서는 보안 정책이 파일 실행을 막을 수 있으므로 신뢰할 수 있는 저장소의 파일을 확인한 뒤 해당 **프로세스에 한해** `-ExecutionPolicy Bypass` 옵션으로 Audit/Install을 실행할 수 있다. 시스템 전체 실행 정책을 변경하지 않는다.

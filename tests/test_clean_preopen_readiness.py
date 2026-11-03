@@ -139,6 +139,10 @@ def test_windows_wsl_preopen_installer_does_not_modify_login_resume_or_power():
     assert 'LogonType Interactive' in script
     assert 'RunLevel Limited' in script
     assert "WakeToRun -eq $false" in script
+    assert "Security.Principal.NTAccount" in script
+    assert "Security.Principal.SecurityIdentifier" in script
+    assert "$principalSidResolved -eq $true" in script
+    assert '[string]$task.Principal.UserId -ieq $currentUser' not in script
     assert "ExistingWindowsTasksModified=$false" in script
     assert "Preopen task appeared concurrently; refusing to overwrite" in script
     for disallowed in (
