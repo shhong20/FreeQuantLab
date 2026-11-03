@@ -1,0 +1,15 @@
+[Unit]
+Description=Read-only frozen clean cohort daily proof after watchdog
+
+[Timer]
+# Original watchdog checks cumulative cohort at 10:50 / 12:50 KST.
+# Do not confuse old missing days with today's successful six decisions.
+OnCalendar=*-*-* 10:55:00 Asia/Seoul
+OnCalendar=*-*-* 12:55:00 Asia/Seoul
+OnStartupSec=13min
+Persistent=true
+AccuracySec=45s
+Unit=freequant-clean-postopen.service
+
+[Install]
+WantedBy=timers.target
