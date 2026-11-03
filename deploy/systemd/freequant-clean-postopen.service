@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/home/hong/apps/FreeQuantLab-observer-runtime
 ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.clean_postopen_chain --db /home/hong/apps/FreeQuantLab/state/clean_shadow_90d.db --protocol /home/hong/apps/FreeQuantLab-clean-runtime/protocols/2026-10-21-btc-eth-clean-90d.json --preopen-dir /home/hong/apps/FreeQuantLab/state/preopen_readiness --report-dir /home/hong/apps/FreeQuantLab/state/postopen_chain
+ExecStart=/home/hong/apps/FreeQuantLab/.venv/bin/python -m quantlab.clean_windows_warm_chain --db /home/hong/apps/FreeQuantLab/state/clean_shadow_90d.db --protocol /home/hong/apps/FreeQuantLab-clean-runtime/protocols/2026-10-21-btc-eth-clean-90d.json --preopen-dir /home/hong/apps/FreeQuantLab/state/preopen_readiness --windows-warm-dir /mnt/c/Users/HONG/AppData/Local/FreeQuantLab/preopen_warm_audit --report-dir /home/hong/apps/FreeQuantLab/state/postopen_chain
 TimeoutStartSec=90
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0077
