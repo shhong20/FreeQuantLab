@@ -4,6 +4,9 @@ Description=FreeQuantLab weekly immutable Korean/US stock 5y public vendor refre
 [Timer]
 # Saturday KST after US Friday close; catch up missed weekly run after user systemd starts.
 # Existing bars and unmodified original payloads are never deleted or rewritten.
+# Daily observation reconnects at boot+20m; refresh the independent long
+# archive afterward, even if no weekly run was missed during the outage.
+OnBootSec=26min
 OnCalendar=Sat *-*-* 11:40:00
 Persistent=true
 AccuracySec=2min

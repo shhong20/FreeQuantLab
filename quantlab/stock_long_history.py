@@ -243,7 +243,8 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                                 if prior is not None:
                                     overlap+=1
                                     if _diff(prior,values):
-                                        if _volume_only(prior,values):
+                                        volume_only=_volume_only(prior,values)
+                                        if volume_only:
                                             volume_revisions+=1
                                             conflict_type="LIVE_BASELINE_VOLUME_REVISION"
                                         else:
@@ -252,8 +253,21 @@ def capture_history(*,history_db:str|Path=DEFAULT_HISTORY,
                                         con.execute("INSERT OR IGNORE INTO conflicts VALUES(?,?,?,?,?,?)",
                                             (market,ticker,day,conflict_type,digest,
                                              json.dumps({"source":values,"baseline":prior})))
-                                        # Never rewrite the initial immutable baseline
-                                        continue
+                                        # Preserve the original observed OHLCV and
+                                        # record the vendor discrepancy independently.
+                                        # A *new* vendor-history day with only a
+                                        # volume revision may be appended, but the
+                                        # unresolved revision remains a research gate.
+                                        # A material OHLC disagreement is NOT allowed
+                                        # to populate a missing long-history price day.
+                                        if not volume_only:
+                                            continue
+                                        if con.execute(
+                                            "SELECT 1 FROM long_bars WHERE "
+                                            "market=? AND ticker=? AND session_date=?",
+                                            (market,ticker,day),
+                                        ).fetchone():
+                                            continue
                                 existing=con.execute(
                                     "SELECT open,high,low,close,volume FROM long_bars WHERE market=? AND ticker=? AND session_date=?",
                                     (market,ticker,day)).fetchone()
