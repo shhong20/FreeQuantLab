@@ -281,3 +281,86 @@ def test_nonvolume_ohlc_change_still_halts_release(tmp_path):
     audit=h.audit_history(history)
     assert audit["status"]=="LONG_HISTORY_OR_SOURCE_INTEGRITY_REVIEW_REQUIRED"
     assert audit["material_price_or_adjustment_conflicts"]==3
+
+
+
+def test_new_volume_only_revision_day_appends_vendor_history_without_rewriting_source(tmp_path):
+    """A missed long-history day is recoverable with genuine vendor bytes;
+    distinct observed volume and immutable conflict evidence are retained."""
+    original,history=fixture(tmp_path)
+
+    def corrected_volume(url,**kwargs):
+        r=synthetic_naver(url,**kwargs)
+        data=__import__("ast").literal_eval(r.content.decode().strip())
+        data[-1][5]+=171  # Real-like same-day volume finalized after first capture
+        r.content=repr(data).encode()
+        return r
+
+    first=run_history(original,history,naver_getter=corrected_volume)
+    assert first["status"]=="LONG_VENDOR_HISTORY_WITH_VOLUME_REVISIONS_NOT_TRADING"
+    for report in first["assets"][:3]:
+        assert report["new_immutable_bars"]==750
+        assert report["vendor_volume_revisions_recorded"]==1
+        assert report["overlap_mismatches"]==0
+    with sqlite3.connect(history) as db,sqlite3.connect(
+        "file:"+str(original)+"?mode=ro",uri=True
+    ) as source:
+        for ticker in ("005930","000660","069500"):
+            restored=db.execute(
+                "SELECT close,volume,first_raw_sha256 FROM long_bars "
+                "WHERE market='KRX' AND ticker=? AND session_date='2026-10-21'",
+                (ticker,),
+            ).fetchone()
+            observed=source.execute(
+                "SELECT close,volume FROM daily_bars "
+                "WHERE market='KRX' AND ticker=? AND session_date='2026-10-21'",
+                (ticker,),
+            ).fetchone()
+            assert restored[:2]==(110.,471.)
+            assert observed==(110.,300.)
+            assert db.execute(
+                "SELECT 1 FROM raw_history WHERE raw_sha256=?",
+                (restored[2],),
+            ).fetchone() is not None
+            assert db.execute(
+                "SELECT count(*) FROM conflicts WHERE ticker=? AND "
+                "session_date='2026-10-21' AND "
+                "conflict_type='LIVE_BASELINE_VOLUME_REVISION'",
+                (ticker,),
+            ).fetchone()[0]==1
+    again=run_history(original,history,naver_getter=corrected_volume)
+    assert sum(item["new_immutable_bars"] for item in again["assets"])==0
+    assert all(item["vendor_volume_revisions_recorded"]==1
+               for item in again["assets"][:3])
+    audit=h.audit_history(history)
+    assert audit["material_price_or_adjustment_conflicts"]==0
+    assert audit["vendor_volume_revisions_retained_without_rewrite"]==3
+    assert audit["qlib_forward_study_approved"] is False
+
+
+def test_material_ohlc_conflict_does_not_fill_missing_vendor_price_day(tmp_path):
+    original,history=fixture(tmp_path)
+
+    def changed_close(url,**kwargs):
+        r=synthetic_naver(url,**kwargs)
+        data=__import__("ast").literal_eval(r.content.decode().strip())
+        data[-1][4]+=0.5  # Close changed within authentic OHLC range
+        r.content=repr(data).encode()
+        return r
+
+    report=run_history(original,history,naver_getter=changed_close)
+    assert report["status"]=="LONG_VENDOR_HISTORY_REVIEW_REQUIRED"
+    for item in report["assets"][:3]:
+        assert item["overlap_mismatches"]==1
+        assert item["new_immutable_bars"]==749
+    with sqlite3.connect(history) as db:
+        assert db.execute(
+            "SELECT count(*) FROM long_bars WHERE market='KRX' "
+            "AND session_date='2026-10-21'"
+        ).fetchone()[0]==0
+        assert db.execute(
+            "SELECT count(*) FROM conflicts WHERE "
+            "conflict_type='LIVE_BASELINE_MISMATCH' "
+            "AND session_date='2026-10-21'"
+        ).fetchone()[0]==3
+    assert h.audit_history(history)["material_price_or_adjustment_conflicts"]==3
