@@ -23,6 +23,7 @@ Tests cover initial independent market-data observations, a new KRX long-history
 1. Run local full suite and PR CI.
 2. Update **only** the stock observer runtime worktree used by existing freequant-stock-history.service, never the separate operating 90-day evaluation branch.
 3. Trigger the already registered user-systemd stock history refresh once. Treat material provider-price conflicts as a legitimate nonzero exit; verify exact persisted date rows and source/conflict evidence independently.
-4. Confirm the untouched clean 90-day virtual cohort still reports omissions rather than fabricating expired paper decisions.
+4. Install the unchanged weekly archive timer with **OnBootSec=26min** plus the existing Saturday schedule and `Persistent=true`, following the daily observation timer's OnBootSec=20min. This provides long-history catch-up after ordinary WSL restart even if no Saturday was missed; it never recreates paper fills.
+5. Confirm the untouched clean 90-day virtual cohort still reports omissions rather than fabricating expired paper decisions.
 
 This is public market history restoration only, not a new buy/sell recommendation.

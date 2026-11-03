@@ -214,6 +214,7 @@ def test_weekly_stock_history_systemd_units_are_unprivileged_and_nontrading():
     assert "ReadWritePaths=/home/hong/apps/FreeQuantLab/state/stock_daily" in service
     assert "TimeoutStartSec=210" in service
     assert "OnCalendar=Sat *-*-* 11:40:00" in timer
+    assert "OnBootSec=26min" in timer
     assert "Persistent=true" in timer
     assert daily.count("ExecStart=")==4
     assert "stock_long_history --audit" in daily
