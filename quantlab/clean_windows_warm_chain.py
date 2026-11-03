@@ -177,6 +177,29 @@ def save(report:dict,root:Path)->Path:
     return target
 
 
+def _canonicalize_empty_windows_source(report:dict)->dict:
+    """Missing and empty receipt directories mean the same zero evidence.
+
+    An immutable old report must survive creation of an empty directory.
+    Any actual receipt, mismatched metadata, or positive attestation remains
+    subject to the full original comparison.
+    """
+    windows=report.get("windows_warm_task_receipts")
+    if not isinstance(windows,dict):
+        return report
+    if (windows.get("status") not in (
+            "WINDOWS_WARM_RECEIPTS_ABSENT",
+            "WINDOWS_WARM_EXECUTION_NOT_ATTESTED")
+        or windows.get("receipt_count")!=0
+        or windows.get("source_sha256")!={}
+        or windows.get("slots")!={"08:40":False,"09:05":False}
+        or windows.get("windows_task_run_proven_for_both_slots") is not False
+        or windows.get("cold_boot_or_host_awake_all_day_proven") is not False):
+        return report
+    return {**report,"windows_warm_task_receipts":{
+        **windows,"status":"WINDOWS_WARM_NO_QUALIFYING_RECEIPTS"}}
+
+
 def verify(*,file:Path|str,db:Path|str,protocol:Path|str,
            preopen_dir:Path|str,windows_warm_dir:Path|str)->dict:
     path=Path(file).expanduser().resolve()
@@ -194,7 +217,8 @@ def verify(*,file:Path|str,db:Path|str,protocol:Path|str,
     rebuilt=assemble(db=db,protocol=protocol,
                      preopen_dir=preopen_dir,windows_warm_dir=windows_warm_dir,
                      now=clock)
-    if original!=rebuilt:
+    if (_canonicalize_empty_windows_source(original)
+            !=_canonicalize_empty_windows_source(rebuilt)):
         raise ValueError("Windows-to-WSL evidence chain not independently reproducible")
     return original
 

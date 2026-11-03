@@ -18,6 +18,10 @@ Windows's `Microsoft-Windows-TaskScheduler/Operational` event log is **disabled*
 - Writes an append-only timestamped JSON + SHA-256 alongside itself in `%LOCALAPPDATA%\FreeQuantLab\preopen_warm_audit\`. It does not expose passwords, tokens, market prices, or private account numbers. A Windows user who can edit these files can also rewrite the hash; **SHA detects ordinary corruption, not malicious user-level forgery or TPM-backed Windows attestation**.
 - If Windows is powered off/Windows user not logged in/WSL won't boot, **do not recreate old warm task results**. TaskScheduler catch-up outside these windows cannot claim success or fabricate market observations.
 
+**Evidence limitation:** With Task Scheduler Operational logging disabled, a last-run timestamp and exit code cannot distinguish a scheduled trigger from a manual invocation within the permitted window. The V1 `ATTESTED` status describes a time-window/configuration/result match, **not independent proof of an automatic trigger**.
+
+For immutable V1 audit reports, a missing Windows receipt folder and a subsequently created empty folder are equivalent zero-receipt evidence. This does not excuse real receipts, source changes, or account observation mismatches.
+
 ## WSL integration
 
 `quantlab.clean_windows_warm_chain` verifies both Windows task-state receipts **independently** against Windows timestamps/sha256/result-code and correlates:

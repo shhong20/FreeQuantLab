@@ -151,6 +151,40 @@ def test_future_windows_task_does_not_backdate_prior_audit(cohort,tmp_path):
         m.verify(file=file,**d)
 
 
+def test_later_empty_windows_directory_does_not_invalidate_prior_report(cohort,tmp_path):
+    record(*cohort)
+    d=_args(cohort,tmp_path)
+    report=m.assemble(**d,now=NOW)
+    assert report["windows_warm_task_receipts"]["status"]=="WINDOWS_WARM_RECEIPTS_ABSENT"
+    file=m.save(report,tmp_path/"result")
+    d["windows_warm_dir"].mkdir()
+    assert m.verify(file=file,**d)==report
+
+
+def test_normalization_never_hides_real_new_receipt(cohort,tmp_path):
+    record(*cohort)
+    d=_args(cohort,tmp_path)
+    file=m.save(m.assemble(**d,now=NOW),tmp_path/"result")
+    _write_receipt(d["windows_warm_dir"],"08:40")
+    with pytest.raises(ValueError,match="not independently reproducible"):
+        m.verify(file=file,**d)
+
+
+def test_forged_empty_source_status_still_fails(cohort,tmp_path):
+    record(*cohort)
+    d=_args(cohort,tmp_path)
+    report=m.assemble(**d,now=NOW)
+    file=m.save(report,tmp_path/"result")
+    tampered={**report,"windows_warm_task_receipts":{
+        **report["windows_warm_task_receipts"],
+        "windows_task_run_proven_for_both_slots":True}}
+    raw=m._payload(tampered)
+    file.write_bytes(raw)
+    file.with_suffix(".json.sha256").write_text(sha256(raw).hexdigest()+"\n")
+    with pytest.raises(ValueError,match="not independently reproducible"):
+        m.verify(file=file,**d)
+
+
 def test_missing_day_no_broker_orders_even_if_windows_tasks_work(cohort,tmp_path):
     d=_args(cohort,tmp_path)
     _write_receipt(d["windows_warm_dir"],"08:40")
